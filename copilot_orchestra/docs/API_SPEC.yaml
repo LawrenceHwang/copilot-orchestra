@@ -1,0 +1,296 @@
+openapi: "3.0.3"
+info:
+  title: Copilot Orchestra API
+  version: "0.1.0"
+  description: Multi-agent AI code review platform built on the GitHub Copilot SDK
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /api/reviews:
+    post:
+      summary: Start a new code review
+      operationId: startReview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewRequest"
+      responses:
+        "202":
+          description: Review accepted and started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewResponse"
+        "400":
+          description: Invalid request (bad path, missing task, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      summary: List all known reviews
+      operationId: listReviews
+      description: |
+        Returns all reviews in reverse chronological order (newest first).
+        The `synthesis` field is always null in this listing to keep responses
+        compact. Fetch GET /api/reviews/{review_id} to retrieve the full report.
+      responses:
+        "200":
+          description: Array of review summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewStatusResponse"
+
+  /api/reviews/{review_id}:
+    get:
+      summary: Get status and result of a review
+      operationId: getReview
+      description: |
+        Poll this endpoint to check whether a review is still running or has
+        finished. When `status` is `"complete"`, the `synthesis` field contains
+        the full final report. When `status` is `"error"`, the `error` field
+        contains the failure message.
+
+        Polling pattern for machine callers:
+          1. POST /api/reviews → receive review_id
+          2. GET /api/reviews/{review_id} every N seconds until status != "running"
+          3. Read synthesis from the response
+      parameters:
+        - name: review_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Review status and (when complete) full synthesis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewStatusResponse"
+        "404":
+          description: Review ID not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/events/{review_id}:
+    get:
+      summary: Subscribe to real-time events for a review (SSE)
+      operationId: streamEvents
+      parameters:
+        - name: review_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Server-Sent Events stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Stream of SSE events. Each event is a JSON object.
+                  See docs/EVENT_SCHEMA.md for the full schema.
+        "404":
+          description: Review ID not found
+
+  /api/models:
+    get:
+      summary: List available Copilot models
+      operationId: listModels
+      responses:
+        "200":
+          description: List of available models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelListResponse"
+
+  /api/health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  copilot_connected:
+                    type: boolean
+
+components:
+  schemas:
+    ReviewRequest:
+      type: object
+      required:
+        - task
+        - codebase_path
+      properties:
+        task:
+          type: string
+          description: What to review and what to look for
+          example: "Review for security vulnerabilities and performance issues"
+          minLength: 10
+          maxLength: 2000
+        codebase_path:
+          type: string
+          description: Absolute path to the local codebase directory
+          example: "/Users/law/workplace/GitHub/global-demographics"
+        scope:
+          type: string
+          enum: [full, custom]
+          default: full
+          description: full=entire codebase, custom=only custom_paths
+        custom_paths:
+          type: array
+          items:
+            type: string
+          description: Specific file/directory paths (required when scope=custom)
+          example: ["src/auth", "src/api/routes.py"]
+        model_preset:
+          type: string
+          enum: [balanced, economy, performance, auto]
+          default: balanced
+          description: |
+            balanced: claude-sonnet-4-6 for all roles (hardcoded default)
+            economy: claude-haiku-4-5-20251001 for all roles
+            performance: claude-opus-4-6 for all roles
+            auto: orchestrator selects per-reviewer model via suggested_models in ReviewPlan
+        model_overrides:
+          $ref: "#/components/schemas/ModelOverrides"
+
+    ModelOverrides:
+      type: object
+      description: Override the model for specific agent roles. Takes highest priority.
+      properties:
+        orchestrator:
+          type: string
+          example: "claude-sonnet-4-6"
+        reviewer_1:
+          type: string
+          example: "claude-opus-4-6"
+        reviewer_2:
+          type: string
+        reviewer_3:
+          type: string
+        synthesizer:
+          type: string
+
+    ReviewResponse:
+      type: object
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          example: started
+        sse_url:
+          type: string
+          example: "/api/events/abc123-..."
+
+    ModelListResponse:
+      type: object
+      properties:
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelInfo"
+        byok_active:
+          type: boolean
+          description: Whether BYOK provider is configured
+
+    ModelInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "claude-sonnet-4-6"
+        name:
+          type: string
+          example: "Claude Sonnet 4.6"
+        capabilities:
+          type: object
+        policy:
+          type: object
+
+    ReviewStatusResponse:
+      type: object
+      description: Status and (when complete) full result of a review.
+      properties:
+        review_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [running, complete, error]
+        task:
+          type: string
+          description: The review task as submitted
+        codebase_path:
+          type: string
+        scope:
+          type: string
+          enum: [full, custom]
+        model_preset:
+          type: string
+          enum: [balanced, economy, performance, auto]
+        started_at:
+          type: integer
+          description: Unix timestamp in milliseconds
+        completed_at:
+          type: integer
+          nullable: true
+          description: Unix timestamp in milliseconds; null if still running
+        duration_ms:
+          type: integer
+          nullable: true
+          description: Wall-clock duration from start to completion
+        synthesis:
+          type: string
+          nullable: true
+          description: |
+            Full final report (Markdown). Populated only when status == "complete".
+            Always null in GET /api/reviews list — fetch GET /api/reviews/{id} for the text.
+        error:
+          type: string
+          nullable: true
+          description: Failure message; populated only when status == "error"
+        sse_url:
+          type: string
+          description: Convenience field — always /api/events/{review_id}
+          example: "/api/events/abc123-..."
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
