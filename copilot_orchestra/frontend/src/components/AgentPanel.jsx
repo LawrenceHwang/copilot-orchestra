@@ -25,10 +25,13 @@ const ROLE_STYLE = {
   },
 };
 
+// All current Claude models have a 200K token context window.
+const CONTEXT_WINDOW = 200_000;
+
 /**
  * AgentPanel — displays one agent's streaming output, tool calls, status, and timing.
  */
-export function AgentPanel({ role, name, state, timer, reviewStartedAt }) {
+export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics }) {
   const { theme, d } = useThemeClasses();
   const bottomRef = useRef(null);
 
@@ -130,6 +133,11 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt }) {
         </div>
       )}
 
+      {/* Usage metrics row */}
+      {metrics && (metrics.input_tokens > 0 || metrics.output_tokens > 0) && (
+        <AgentUsageRow metrics={metrics} />
+      )}
+
       {/* Stream content */}
       <div className="flex-1 overflow-y-auto p-3 min-h-0">
         {!state.streamText && state.status === "idle" && (
@@ -152,6 +160,50 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt }) {
 
         <div ref={bottomRef} />
       </div>
+    </div>
+  );
+}
+
+function AgentUsageRow({ metrics }) {
+  const { d } = useThemeClasses();
+  const inputTokens = metrics.input_tokens || 0;
+  const outputTokens = metrics.output_tokens || 0;
+  const ctxPct = Math.min(100, (inputTokens / CONTEXT_WINDOW) * 100);
+  const ctxColor =
+    ctxPct > 80 ? "bg-red-500" : ctxPct > 50 ? "bg-amber-500" : "bg-sky-500";
+
+  return (
+    <div className={`flex items-center gap-3 px-3 py-1.5 border-b text-[10px] font-mono ${
+      d("border-gray-800/40 bg-gray-950/40 text-gray-500", "border-slate-100 bg-slate-50/60 text-slate-400")
+    }`}>
+      {/* Context window bar */}
+      <div className="flex items-center gap-1.5">
+        <span>CTX</span>
+        <div className={`w-14 h-1 rounded-full overflow-hidden ${d("bg-gray-700", "bg-slate-200")}`}>
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${ctxColor}`}
+            style={{ width: `${ctxPct}%` }}
+          />
+        </div>
+        <span className={d("text-gray-400", "text-slate-500")}>{ctxPct.toFixed(1)}%</span>
+      </div>
+
+      <span className={d("text-gray-700", "text-slate-300")}>|</span>
+
+      {/* Token counts */}
+      <span>
+        IN <span className={d("text-sky-400", "text-sky-600")}>{fmtTokens(inputTokens)}</span>
+      </span>
+      <span>
+        OUT <span className={d("text-violet-400", "text-violet-600")}>{fmtTokens(outputTokens)}</span>
+      </span>
+
+      {metrics.cost > 0 && (
+        <>
+          <span className={d("text-gray-700", "text-slate-300")}>|</span>
+          <span className={d("text-emerald-400", "text-emerald-600")}>${metrics.cost.toFixed(4)}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -180,6 +232,12 @@ function ToolBadge({ call }) {
 
 function shortModel(model) {
   return model.replace("claude-", "").replace(/-(\d+)-(\d+)/, "-$1.$2");
+}
+
+function fmtTokens(n) {
+  if (n === 0) return "0";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
 }
 
 export function CopyButton({ text }) {

@@ -602,6 +602,7 @@ function AppInner() {
                   state={state.agents[role]}
                   timer={state.timers.agents[role]}
                   reviewStartedAt={state.timers.reviewStartedAt}
+                  metrics={state.metrics[role]}
                 />
               ))}
             </div>
@@ -612,6 +613,7 @@ function AppInner() {
             <SynthesisPanel
               state={state.synthesis}
               timer={state.timers.agents["synthesizer"]}
+              metrics={state.metrics["synthesizer"]}
             />
           )}
 

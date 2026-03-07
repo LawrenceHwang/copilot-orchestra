@@ -65,26 +65,32 @@ export function MetricsBar({ metrics, reviewStatus }) {
       {quota && (
         <>
           <div className={`h-4 w-px ${d("bg-gray-700", "bg-slate-200")}`} />
-          {/* Quota bar */}
+          {/* Premium request quota */}
           <div className="flex items-center gap-2">
-            <span className={d("text-gray-500", "text-slate-400")}>QUOTA</span>
-            <div className={`w-24 h-1.5 rounded-full overflow-hidden ${d("bg-gray-700", "bg-slate-200")}`}>
-              <div
-                className={`h-full rounded-full transition-all ${
-                  quota.remaining_percentage > 50
-                    ? "bg-emerald-500"
-                    : quota.remaining_percentage > 20
-                    ? "bg-amber-500"
-                    : "bg-red-500"
-                }`}
-                style={{ width: `${Math.max(0, quota.remaining_percentage)}%` }}
-              />
-            </div>
-            <span className={d("text-gray-400", "text-slate-600")}>
-              {quota.remaining_percentage?.toFixed(0)}%
-            </span>
-            {quota.is_unlimited && (
-              <span className="text-emerald-500">∞</span>
+            <span className={d("text-gray-500", "text-slate-400")}>PREMIUM</span>
+            {quota.is_unlimited ? (
+              <span className="text-emerald-500">∞ unlimited</span>
+            ) : (
+              <>
+                <div className={`w-16 h-1.5 rounded-full overflow-hidden ${d("bg-gray-700", "bg-slate-200")}`}>
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      quota.remaining_percentage > 50
+                        ? "bg-emerald-500"
+                        : quota.remaining_percentage > 20
+                        ? "bg-amber-500"
+                        : "bg-red-500"
+                    }`}
+                    style={{ width: `${Math.max(0, quota.remaining_percentage)}%` }}
+                  />
+                </div>
+                <span className={d("text-gray-300", "text-gray-700")}>
+                  {quota.used_requests ?? "?"} / {quota.entitlement_requests ?? "?"}
+                  <span className={`ml-1 ${d("text-gray-500", "text-slate-400")}`}>
+                    ({quota.remaining_percentage?.toFixed(0)}% left)
+                  </span>
+                </span>
+              </>
             )}
           </div>
         </>
@@ -94,9 +100,15 @@ export function MetricsBar({ metrics, reviewStatus }) {
       {Object.keys(metrics).length > 0 && (
         <>
           <div className={`h-4 w-px ${d("bg-gray-700", "bg-slate-200")}`} />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             {Object.entries(metrics).map(([agent, m]) => (
-              <AgentMetric key={agent} agent={agent} tokens={(m.input_tokens || 0) + (m.output_tokens || 0)} />
+              <AgentMetric
+                key={agent}
+                agent={agent}
+                inputTokens={m.input_tokens || 0}
+                outputTokens={m.output_tokens || 0}
+                cost={m.cost || 0}
+              />
             ))}
           </div>
         </>
@@ -124,7 +136,7 @@ const REVIEWER_SHORT = {
   orchestrator: "Orch",
 };
 
-function AgentMetric({ agent, tokens }) {
+function AgentMetric({ agent, inputTokens, outputTokens, cost }) {
   const { d } = useThemeClasses();
   const colors = {
     reviewer_1:   d("text-red-400",    "text-red-600"),
@@ -135,8 +147,14 @@ function AgentMetric({ agent, tokens }) {
   };
   const label = REVIEWER_SHORT[agent] ?? agent[0].toUpperCase();
   return (
-    <span className={`${colors[agent] || d("text-gray-400", "text-slate-500")} text-[10px]`}>
-      {label}: {fmtTokens(tokens)}
+    <span className={`flex items-center gap-1 ${colors[agent] || d("text-gray-400", "text-slate-500")} text-[10px]`}>
+      <span className="font-semibold">{label}</span>
+      <span className={d("text-gray-600", "text-slate-400")}>
+        {fmtTokens(inputTokens)}↑ {fmtTokens(outputTokens)}↓
+      </span>
+      {cost > 0 && (
+        <span className={d("text-gray-600", "text-slate-400")}>${cost.toFixed(3)}</span>
+      )}
     </span>
   );
 }
