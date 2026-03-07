@@ -317,6 +317,42 @@ or Rich.
 7. **grep pattern safety**: `grep_codebase` passes the user-supplied pattern as a subprocess
    list argument — never via shell interpolation — so arbitrary regex content is safe.
 
+## Frontend: Usage Display
+
+Three layers of usage visibility in the browser UI:
+
+### MetricsBar (global)
+
+Sits between the header and main content. Shows aggregated totals across all five agents:
+
+- **IN / OUT / TOTAL** — cumulative token counts from all `metrics.update` events
+- **EST. COST** — aggregate cost (shown when > 0)
+- **PREMIUM** — quota consumption: `used_requests / entitlement_requests (X% left)` with a
+  colour-coded bar (green → amber → red as quota decreases). "∞ unlimited" shown for
+  unlimited entitlements.
+- **Per-agent strip** — each agent's label with individual IN↑ OUT↓ tokens and cost.
+
+### AgentUsageRow (per-agent panel)
+
+Displayed below the tool-call badge row in each `AgentPanel` (including orchestrator in sidebar)
+and in `SynthesisPanel`. Only rendered when token data is non-zero (idle panels stay clean).
+
+- **Context window %** — colour bar (`input_tokens / 200_000 * 100`). Sky below 50 %, amber 50-80 %, red above 80 %.
+- **IN** — `input_tokens` formatted (e.g. `12.3k`).
+- **OUT** — `output_tokens` formatted.
+- **Cost** — per-agent USD cost (shown when non-zero).
+
+Context window size is hardcoded to 200K tokens — the context limit for all current Claude models
+(Opus 4.6, Sonnet 4.6, Haiku 4.5). The constant `CONTEXT_WINDOW = 200_000` lives in
+`AgentPanel.jsx` and `SynthesisPanel.jsx`.
+
+### State wiring
+
+`App.jsx` holds `metrics: { [agentRole]: { input_tokens, output_tokens, cost, quota } }` in
+the `useReducer` store, updated by `METRICS_UPDATE` actions from `metrics.update` SSE events.
+The metrics slice is passed down as the `metrics` prop to `AgentPanel` (for each reviewer role)
+and `SynthesisPanel`.
+
 ## Technology Choices
 
 See [adr/](adr/) for individual Architecture Decision Records.

@@ -48,7 +48,7 @@ request counts update live.
 | F6 | Three independent reviewer agents run in parallel, each streaming output in real time; their event role identifiers are `reviewer_1`, `reviewer_2`, `reviewer_3` |
 | F7 | A synthesizer agent produces a final unified review when all three reviewers finish |
 | F8 | In "auto" mode the orchestrator selects the model for each reviewer via `suggested_models` in the `ReviewPlan` |
-| F9 | Real-time metrics bar shows: tokens used, context %, premium request count — including orchestrator metrics |
+| F9 | Real-time metrics bar shows aggregate token counts (IN/OUT/TOTAL), aggregate cost, and premium request quota (used / total with % remaining). Per-agent panels each show: context window % bar (input_tokens / 200K), IN/OUT token counts, and per-turn cost. All five agents including orchestrator and synthesizer emit metrics. |
 | F10 | BYOK: user can provide their own API key and provider via environment config |
 | F11 | All agent tool calls (file reads, searches, diffs) are visible in the UI as activity badges for all agents including the orchestrator |
 | F12 | Large-repo support: `.gitignore`-aware directory listing, content search via `grep_codebase`, per-file diffs via `git_diff_file` |
