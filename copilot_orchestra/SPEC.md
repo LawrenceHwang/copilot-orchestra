@@ -56,6 +56,7 @@ request counts update live.
 | F14 | An info popout in the header explains the design philosophy and SDK capabilities to new users |
 | F15 | Machine callers can poll `GET /api/reviews/{review_id}` for review status and final synthesis without holding an SSE connection — supports CI/CD and batch workflows |
 | F16 | `GET /api/reviews` lists all known reviews (newest first) with status; `synthesis` is omitted from the list response and available only via the individual fetch |
+| F17 | Codebase tools must accept both absolute and codebase-root-relative paths; tools with a `path` argument should default to the review root when omitted |
 
 ### Non-Functional
 

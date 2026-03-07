@@ -170,11 +170,11 @@ synthesizer gets none — it is a single-turn call):
 
 | Tool | Parameters | Notes |
 | ---- | ---------- | ----- |
-| `read_file` | `path: str` | 1 MB cap; path validated against allowed root |
-| `list_directory` | `path: str`, `max_depth: int (1-5)` | git-aware (respects `.gitignore`); 300-entry cap with truncation notice |
+| `read_file` | `path: str` | 1 MB cap; `path` may be absolute or review-root-relative; validated against allowed root |
+| `list_directory` | `path: str='.'`, `max_depth: int (1-5)` | git-aware (respects `.gitignore`); defaults `path` to review root; 300-entry cap with truncation notice |
 | `grep_codebase` | `pattern: str`, `glob: str`, `max_results: int` | rg → git grep → Python fallback; 20 KB output cap |
-| `git_diff` | `path: str`, `base: str` | full repo diff; 50 KB cap; base ref validated |
-| `git_diff_file` | `path: str`, `file: str`, `base: str` | single-file diff; `file` param path-validated |
+| `git_diff` | `path: str='.'`, `base: str` | full repo diff; defaults `path` to review root; 50 KB cap; base ref validated |
+| `git_diff_file` | `path: str='.'`, `file: str`, `base: str` | single-file diff; defaults `path` to review root; `file` may be absolute or root-relative and is path-validated |
 
 Allowed roots are set per-review to `[request.codebase_path]`. No other paths accessible.
 

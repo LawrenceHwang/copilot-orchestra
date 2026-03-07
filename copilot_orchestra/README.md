@@ -139,3 +139,14 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full system design.
 - No credentials are logged
 - BYOK keys are read from environment only, never from request bodies
 - See [Security Rule 0](SPEC.md#non-functional) in the spec
+
+## Tool Path Compatibility
+
+To improve reliability across different model families, codebase tools accept both:
+
+- Absolute paths (for example `/Users/me/repo/src/app.py`)
+- Review-root-relative paths (for example `src/app.py`)
+
+Additionally, path-bearing tools like `list_directory` and `git_diff` default to the
+review root when `path` is omitted. This reduces tool invocation errors from models
+that provide partial arguments while preserving the same path-safety guarantees.

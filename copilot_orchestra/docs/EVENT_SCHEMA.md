@@ -107,7 +107,7 @@ An agent invoked a tool.
   "agent": "reviewer_1",
   "tool_name": "read_file",
   "tool_call_id": "tc_xyz",
-  "args": { "path": "/path/to/repo/src/auth.py" }
+  "args": { "path": "src/auth.py" }
 }
 ```
 

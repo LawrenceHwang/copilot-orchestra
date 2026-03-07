@@ -259,6 +259,14 @@ curl -N -H "Accept: text/event-stream" \
   "task": "Review for security vulnerabilities",
   "codebase_path": "/absolute/path/to/repo"
 }
+
+### Tool Invocation Compatibility Notes
+
+Agent-side codebase tools accept both absolute and repository-root-relative paths.
+For example, `read_file` can be called with either `/repo/src/app.py` or `src/app.py`.
+Tools with a repository `path` parameter (`list_directory`, `git_diff`, `git_diff_file`)
+also default to the review root when omitted. This improves cross-model reliability
+without relaxing path-safety constraints.
 ```
 
 **Full request with all options:**

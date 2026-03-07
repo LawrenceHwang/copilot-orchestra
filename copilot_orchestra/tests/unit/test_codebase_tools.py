@@ -62,6 +62,14 @@ class TestPathValidation:
         path = registry.resolve_safe(str(tmp_codebase))
         assert path == tmp_codebase.resolve()
 
+    def test_root_relative_path_is_allowed(self, registry, tmp_codebase):
+        path = registry.resolve_safe("src/auth.py")
+        assert path == (tmp_codebase / "src" / "auth.py").resolve()
+
+    def test_dot_path_resolves_to_root(self, registry, tmp_codebase):
+        path = registry.resolve_safe(".")
+        assert path == tmp_codebase.resolve()
+
 
 class TestReadFile:
     def test_read_existing_file(self, registry, tmp_codebase):
@@ -92,6 +100,10 @@ class TestReadFile:
         result = registry.read_file(str(ok_file))
         assert len(result) == 1024 * 1024
 
+    def test_read_existing_file_with_root_relative_path(self, registry):
+        result = registry.read_file("README.md")
+        assert "Test Repo" in result
+
 
 class TestListDirectory:
     def test_list_directory_returns_tree(self, registry, tmp_codebase):
@@ -121,6 +133,10 @@ class TestListDirectory:
 
     def test_list_directory_shows_nested_files(self, registry, tmp_codebase):
         result = registry.list_directory(str(tmp_codebase), max_depth=3)
+        assert "auth.py" in result
+
+    def test_list_directory_with_root_relative_path(self, registry):
+        result = registry.list_directory("src")
         assert "auth.py" in result
 
 
@@ -173,6 +189,37 @@ class TestBuildCodebaseTools:
         result = await read_tool.handler(invocation)
         # define_tool wraps errors as failure results, not exceptions
         assert result["resultType"] == "failure"
+
+    async def test_list_directory_tool_defaults_to_root_path(self, tmp_codebase):
+        from copilot.types import ToolInvocation
+
+        tools = build_codebase_tools(str(tmp_codebase))
+        list_tool = next(t for t in tools if t.name == "list_directory")
+        invocation: ToolInvocation = {
+            "session_id": "test",
+            "tool_call_id": "tc-3",
+            "tool_name": "list_directory",
+            "arguments": {},
+        }
+        result = await list_tool.handler(invocation)
+        assert result["resultType"] == "success"
+        assert "README.md" in result["textResultForLlm"]
+
+    async def test_git_diff_tool_defaults_to_root_path(self, tmp_codebase):
+        from copilot.types import ToolInvocation
+
+        tools = build_codebase_tools(str(tmp_codebase))
+        diff_tool = next(t for t in tools if t.name == "git_diff")
+        invocation: ToolInvocation = {
+            "session_id": "test",
+            "tool_call_id": "tc-4",
+            "tool_name": "git_diff",
+            "arguments": {},
+        }
+        result = await diff_tool.handler(invocation)
+        # In a non-git temp dir this should still be a successful invocation
+        # returning either empty output or an explicit git availability message.
+        assert result["resultType"] == "success"
 
 
 # ── Large-repo: skip dirs and file cap (non-git fallback) ────────────────────

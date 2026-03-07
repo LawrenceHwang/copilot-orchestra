@@ -288,7 +288,9 @@ async def _run_orchestrator(
 
     session = await session_manager.create_session(session_config)
 
-    async def on_event(event: Any) -> None:
+    loop = asyncio.get_running_loop()
+
+    async def _async_on_event(event: Any) -> None:
         etype = event.type
 
         if etype == SessionEventType.ASSISTANT_MESSAGE_DELTA and event.data.delta_content:
@@ -345,6 +347,13 @@ async def _run_orchestrator(
                 **metrics,
                 "quota": quota,
             })
+
+    def on_event(event: Any) -> None:
+        """SDK callback bridge: schedule async event processing safely."""
+        loop.call_soon_threadsafe(
+            asyncio.ensure_future,
+            _async_on_event(event),
+        )
 
     unsubscribe = session.on(on_event)
     try:

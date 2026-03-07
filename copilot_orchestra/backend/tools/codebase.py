@@ -83,8 +83,19 @@ class CodebaseToolRegistry:
         Raises PathNotAllowedError if the resolved path escapes the root.
         This blocks both directory traversal (../../etc) and symlink escapes.
         """
+        # Many models emit root-relative paths (e.g. "src/app.py") while
+        # others emit absolute paths. Support both safely.
+        raw_path = path.strip()
+        candidate: Path
+        if raw_path in {"", "."}:
+            candidate = self._root
+        else:
+            candidate = Path(raw_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = self._root / candidate
+
         try:
-            resolved = Path(path).resolve()
+            resolved = candidate.resolve()
         except (OSError, ValueError) as exc:
             raise PathNotAllowedError(f"Invalid path: {exc}") from exc
 
@@ -340,11 +351,22 @@ class CodebaseToolRegistry:
 # ── Pydantic parameter models ─────────────────────────────────────────────────
 
 class ReadFileParams(BaseModel):
-    path: str = Field(description="Absolute path to the file to read")
+    path: str = Field(
+        description=(
+            "File path to read. Accepts either an absolute path or a path "
+            "relative to the review root (e.g. 'src/main.py')."
+        )
+    )
 
 
 class ListDirectoryParams(BaseModel):
-    path: str = Field(description="Absolute path to the directory to list")
+    path: str = Field(
+        default=".",
+        description=(
+            "Directory path to list. Accepts absolute or review-root-relative "
+            "paths. Defaults to the review root when omitted."
+        ),
+    )
     max_depth: int = Field(
         default=3,
         ge=1,
@@ -368,7 +390,13 @@ class GrepCodebaseParams(BaseModel):
 
 
 class GitDiffParams(BaseModel):
-    path: str = Field(description="Absolute path to the git repository root")
+    path: str = Field(
+        default=".",
+        description=(
+            "Path to the git repository root. Accepts absolute or "
+            "review-root-relative paths. Defaults to the review root."
+        ),
+    )
     base: str = Field(
         default="HEAD",
         description="Git ref to diff against (e.g. HEAD, main, abc1234)",
@@ -376,7 +404,13 @@ class GitDiffParams(BaseModel):
 
 
 class GitDiffFileParams(BaseModel):
-    path: str = Field(description="Absolute path to the git repository root")
+    path: str = Field(
+        default=".",
+        description=(
+            "Path to the git repository root. Accepts absolute or "
+            "review-root-relative paths. Defaults to the review root."
+        ),
+    )
     file: str = Field(description="Relative path of the file to diff within the repository")
     base: str = Field(
         default="HEAD",
