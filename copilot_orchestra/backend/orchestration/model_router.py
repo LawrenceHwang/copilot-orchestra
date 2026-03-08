@@ -10,6 +10,7 @@ Usage:
 """
 
 from enum import Enum
+from typing import Any
 
 from backend.logging_config import get_logger
 
@@ -37,10 +38,11 @@ class AgentRole(str, Enum):
 
 
 class ModelPreset(str, Enum):
-    BALANCED = "balanced"     # sensible defaults per role
-    ECONOMY = "economy"       # cheapest model for all roles
+    BALANCED = "balanced"  # sensible defaults per role
+    ECONOMY = "economy"  # cheapest model for all roles
     PERFORMANCE = "performance"  # best model for all roles
-    AUTO = "auto"             # orchestrator picks at runtime
+    FREE = "free"  # dynamically-discovered 0x models only
+    AUTO = "auto"  # orchestrator picks at runtime
 
 
 class ModelRouter:
@@ -56,6 +58,7 @@ class ModelRouter:
         preset: ModelPreset = ModelPreset.BALANCED,
         overrides: dict[AgentRole, str] | None = None,
         default_models: dict[AgentRole, str] | None = None,
+        available_models: list[Any] | None = None,
     ) -> None:
         self._preset = preset
         # User overrides (highest priority after hardcoded)
@@ -64,12 +67,62 @@ class ModelRouter:
         self._orchestrator_choices: dict[AgentRole, str] = {}
         # Custom defaults (used as base for balanced preset)
         self._custom_defaults: dict[AgentRole, str] = default_models or {}
+        # Dynamically discovered free (0x) models from SDK metadata.
+        self._free_model_ids: list[str] = self._discover_free_model_ids(available_models or [])
+        self._selected_free_model: str | None = self._pick_preferred_free_model(
+            self._free_model_ids
+        )
 
         logger.debug(
             "ModelRouter created",
             preset=preset.value,
             user_overrides={k.value: v for k, v in self._user_overrides.items()},
+            free_model_count=len(self._free_model_ids),
         )
+
+    @staticmethod
+    def _discover_free_model_ids(models: list[Any]) -> list[str]:
+        """Return enabled model IDs whose billing multiplier is exactly 0.0."""
+        free_ids: list[str] = []
+
+        for model in models:
+            model_id = getattr(model, "id", None)
+            if not isinstance(model_id, str) or not model_id:
+                continue
+
+            policy = getattr(model, "policy", None)
+            state = getattr(policy, "state", None)
+            if state not in (None, "enabled"):
+                continue
+
+            billing = getattr(model, "billing", None)
+            multiplier = getattr(billing, "multiplier", None)
+            if multiplier is None:
+                continue
+
+            try:
+                if float(multiplier) == 0.0:
+                    free_ids.append(model_id)
+            except (TypeError, ValueError):
+                continue
+
+        return sorted(set(free_ids))
+
+    @staticmethod
+    def _pick_preferred_free_model(free_ids: list[str]) -> str | None:
+        """Pick a stable free model choice without hardcoding model IDs."""
+        if not free_ids:
+            return None
+        # Stable deterministic choice keeps all roles on the same free model.
+        return free_ids[0]
+
+    def has_free_models(self) -> bool:
+        """Whether dynamic discovery found at least one free (0x) model."""
+        return bool(self._free_model_ids)
+
+    def free_models(self) -> list[str]:
+        """Return discovered free (0x) model IDs."""
+        return list(self._free_model_ids)
 
     def get_model(self, role: AgentRole) -> str:
         """
@@ -91,7 +144,9 @@ class ModelRouter:
 
         # 3. Preset
         model = self._resolve_from_preset(role)
-        logger.debug("Model resolved via preset", role=role.value, preset=self._preset.value, model=model)
+        logger.debug(
+            "Model resolved via preset", role=role.value, preset=self._preset.value, model=model
+        )
         return model
 
     def set_orchestrator_choice(self, role: AgentRole, model: str) -> None:
@@ -116,6 +171,14 @@ class ModelRouter:
 
         if self._preset == ModelPreset.PERFORMANCE:
             return _PERFORMANCE_MODEL
+
+        if self._preset == ModelPreset.FREE:
+            if self._selected_free_model:
+                return self._selected_free_model
+            raise RuntimeError(
+                "FREE preset selected but no free (0x) models were discovered "
+                "from SDK model metadata"
+            )
 
         # BALANCED or AUTO: use custom defaults, then hardcoded
         if role in self._custom_defaults:

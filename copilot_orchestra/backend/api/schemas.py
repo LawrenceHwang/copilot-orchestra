@@ -55,7 +55,7 @@ class ReviewRequest(BaseModel):
         default=None,
         description="Required when scope=custom. Specific file/dir paths within codebase_path.",
     )
-    model_preset: Literal["balanced", "economy", "performance", "auto"] = Field(
+    model_preset: Literal["balanced", "economy", "performance", "free", "auto"] = Field(
         default="balanced",
     )
     model_overrides: ModelOverrides | None = None
@@ -92,6 +92,7 @@ class ModelInfoResponse(BaseModel):
     name: str
     capabilities: dict | None = None
     policy: dict | None = None
+    billing_multiplier: float | None = None
 
 
 class ModelListResponse(BaseModel):
@@ -117,9 +118,9 @@ class ReviewStatusResponse(BaseModel):
     codebase_path: str
     scope: str
     model_preset: str
-    started_at: int                    # unix ms
-    completed_at: Optional[int] = None # unix ms
+    started_at: int  # unix ms
+    completed_at: Optional[int] = None  # unix ms
     duration_ms: Optional[int] = None
-    synthesis: Optional[str] = None    # populated when status == "complete"
-    error: Optional[str] = None        # populated when status == "error"
-    sse_url: str                       # convenience: always /api/events/{review_id}
+    synthesis: Optional[str] = None  # populated when status == "complete"
+    error: Optional[str] = None  # populated when status == "error"
+    sse_url: str  # convenience: always /api/events/{review_id}

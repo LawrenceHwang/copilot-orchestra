@@ -41,9 +41,13 @@ async def start_review(
     # Validate codebase path exists and is a directory
     codebase = Path(request_body.codebase_path)
     if not codebase.exists():
-        raise HTTPException(status_code=400, detail=f"Path does not exist: {request_body.codebase_path}")
+        raise HTTPException(
+            status_code=400, detail=f"Path does not exist: {request_body.codebase_path}"
+        )
     if not codebase.is_dir():
-        raise HTTPException(status_code=400, detail=f"Path is not a directory: {request_body.codebase_path}")
+        raise HTTPException(
+            status_code=400, detail=f"Path is not a directory: {request_body.codebase_path}"
+        )
 
     review_id = str(uuid.uuid4())
     logger.info(
@@ -67,7 +71,29 @@ async def start_review(
     # Build model router from request params
     preset = ModelPreset(request_body.model_preset)
     overrides = request_body.model_overrides.to_role_dict() if request_body.model_overrides else {}
-    model_router = ModelRouter(preset=preset, overrides=overrides)
+    available_models = None
+    if preset == ModelPreset.FREE:
+        try:
+            # list_models is metadata discovery only (non-generative, no model call).
+            available_models = await session_manager.list_models()
+        except Exception as exc:
+            logger.warning("Failed to discover models for FREE preset", error=str(exc))
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to discover available models for FREE preset",
+            ) from exc
+
+    model_router = ModelRouter(
+        preset=preset,
+        overrides=overrides,
+        available_models=available_models,
+    )
+
+    if preset == ModelPreset.FREE and not model_router.has_free_models():
+        raise HTTPException(
+            status_code=400,
+            detail="No free (0x) models are currently available for this account",
+        )
 
     # Build orchestration request
     orch_request = OrchestratorRequest(

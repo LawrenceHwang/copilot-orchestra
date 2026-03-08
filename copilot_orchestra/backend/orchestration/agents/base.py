@@ -28,7 +28,7 @@ logger = get_logger("agent.base")
 # - LIVENESS: if no SDK event (token, tool call, etc.) arrives within this
 #   window the agent is considered stuck and cancelled early.
 # - POLL: how often the watchdog checks the liveness clock.
-AGENT_TOTAL_TIMEOUT_S: float = 600.0    # 10-min hard ceiling
+AGENT_TOTAL_TIMEOUT_S: float = 600.0  # 10-min hard ceiling
 AGENT_LIVENESS_TIMEOUT_S: float = 90.0  # 90 s idle → stuck
 WATCHDOG_POLL_S: float = 10.0
 
@@ -59,7 +59,7 @@ class BaseAgent:
             "output_tokens": 0,
             "cache_read_tokens": 0,
             "cache_write_tokens": 0,
-            "cost": 0.0,
+            "turns": 0,
         }
 
     async def run(self, files: list[str], focus: str) -> str:
@@ -180,44 +180,54 @@ class BaseAgent:
             # Deep-thinking models emit reasoning events during their silent
             # thinking phase — these reset the liveness clock so the watchdog
             # does not mistake reasoning for being stuck.
-            await self._publish({
-                "type": "agent.thinking",
-                "agent": self.role.value,
-            })
+            await self._publish(
+                {
+                    "type": "agent.thinking",
+                    "agent": self.role.value,
+                }
+            )
 
         elif etype == SessionEventType.ASSISTANT_MESSAGE_DELTA:
             if event.data.delta_content:
-                await self._publish({
-                    "type": "agent.stream",
-                    "agent": self.role.value,
-                    "content": event.data.delta_content,
-                })
+                await self._publish(
+                    {
+                        "type": "agent.stream",
+                        "agent": self.role.value,
+                        "content": event.data.delta_content,
+                    }
+                )
 
         elif etype == SessionEventType.ASSISTANT_MESSAGE:
             if event.data.content:
-                await self._publish({
-                    "type": "agent.message",
-                    "agent": self.role.value,
-                    "content": event.data.content,
-                })
+                await self._publish(
+                    {
+                        "type": "agent.message",
+                        "agent": self.role.value,
+                        "content": event.data.content,
+                    }
+                )
 
         elif etype == SessionEventType.TOOL_EXECUTION_START:
-            await self._publish({
-                "type": "agent.tool_call",
-                "agent": self.role.value,
-                "tool_name": event.data.tool_name or "unknown",
-                "tool_call_id": event.data.tool_call_id or "",
-                "args": event.data.arguments,
-            })
+            await self._publish(
+                {
+                    "type": "agent.tool_call",
+                    "agent": self.role.value,
+                    "tool_name": event.data.tool_name or "unknown",
+                    "tool_call_id": event.data.tool_call_id or "",
+                    "args": event.data.arguments,
+                }
+            )
 
         elif etype == SessionEventType.TOOL_EXECUTION_COMPLETE:
-            await self._publish({
-                "type": "agent.tool_result",
-                "agent": self.role.value,
-                "tool_name": event.data.tool_name or "unknown",
-                "tool_call_id": event.data.tool_call_id or "",
-                "success": True,
-            })
+            await self._publish(
+                {
+                    "type": "agent.tool_result",
+                    "agent": self.role.value,
+                    "tool_name": event.data.tool_name or "unknown",
+                    "tool_call_id": event.data.tool_call_id or "",
+                    "success": True,
+                }
+            )
 
         elif etype == SessionEventType.ASSISTANT_USAGE:
             # Real token counts from the API response
@@ -225,7 +235,7 @@ class BaseAgent:
             self._metrics["output_tokens"] += event.data.output_tokens or 0
             self._metrics["cache_read_tokens"] += event.data.cache_read_tokens or 0
             self._metrics["cache_write_tokens"] += event.data.cache_write_tokens or 0
-            self._metrics["cost"] += event.data.cost or 0.0
+            self._metrics["turns"] += 1
 
             quota: dict[str, Any] = {}
             if event.data.quota_snapshots:
@@ -238,13 +248,15 @@ class BaseAgent:
                     }
                     break  # take first snapshot
 
-            await self._publish({
-                "type": "metrics.update",
-                "agent": self.role.value,
-                "model": event.data.model or self._model,
-                **self._metrics,
-                "quota": quota,
-            })
+            await self._publish(
+                {
+                    "type": "metrics.update",
+                    "agent": self.role.value,
+                    "model": event.data.model or self._model,
+                    **self._metrics,
+                    "quota": quota,
+                }
+            )
 
         elif etype == SessionEventType.SESSION_ERROR:
             error_msg = ""

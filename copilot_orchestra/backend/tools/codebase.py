@@ -36,18 +36,34 @@ logger = get_logger("codebase_tools")
 MAX_FILE_SIZE_BYTES = 1024 * 1024  # 1 MB
 MAX_GIT_DIFF_BYTES = 50_000
 MAX_DIRECTORY_DEPTH = 5
-MAX_DIRECTORY_FILES = 300       # total entries before truncation
+MAX_DIRECTORY_FILES = 300  # total entries before truncation
 MAX_GREP_OUTPUT_BYTES = 20_000  # bytes before grep output is truncated
 
 # Common large/generated directories to skip in non-git fallback mode.
-_SKIP_DIRS: frozenset[str] = frozenset({
-    "node_modules", "__pycache__", ".venv", "venv", "env",
-    "dist", "build", "target", "vendor", ".gradle", ".idea",
-    "coverage", ".nyc_output", ".cache", ".tox", "eggs",
-})
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        "node_modules",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "env",
+        "dist",
+        "build",
+        "target",
+        "vendor",
+        ".gradle",
+        ".idea",
+        "coverage",
+        ".nyc_output",
+        ".cache",
+        ".tox",
+        "eggs",
+    }
+)
 
 
 # ── Custom exceptions ─────────────────────────────────────────────────────────
+
 
 class PathNotAllowedError(PermissionError):
     """Raised when a path is outside the allowed root."""
@@ -62,6 +78,7 @@ class DirectoryTooDeepError(ValueError):
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
+
 
 class CodebaseToolRegistry:
     """
@@ -102,9 +119,7 @@ class CodebaseToolRegistry:
         try:
             resolved.relative_to(self._root)
         except ValueError:
-            raise PathNotAllowedError(
-                f"Path '{path}' is outside the allowed root '{self._root}'"
-            )
+            raise PathNotAllowedError(f"Path '{path}' is outside the allowed root '{self._root}'")
         return resolved
 
     def read_file(self, path: str) -> str:
@@ -165,15 +180,15 @@ class CodebaseToolRegistry:
             truncated = remaining > 0
             truncation_suffix = (
                 f"\n[... {remaining} more files not shown — use grep_codebase to search]"
-                if truncated else ""
+                if truncated
+                else ""
             )
         else:
             counter = [0]
             complete = _build_tree(safe, safe, max_depth, 0, lines, counter)
             truncated = not complete
             truncation_suffix = (
-                "\n[... more entries not shown — use grep_codebase to search]"
-                if truncated else ""
+                "\n[... more entries not shown — use grep_codebase to search]" if truncated else ""
             )
 
         result = "\n".join(lines) + truncation_suffix
@@ -210,7 +225,12 @@ class CodebaseToolRegistry:
         cmd += [pattern, "."]
         try:
             result = subprocess.run(
-                cmd, cwd=str(self._root), capture_output=True, text=True, timeout=30, check=False,
+                cmd,
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
             )
             # rg exit codes: 0=matches, 1=no matches, 2=error
             if result.returncode == 2:
@@ -227,7 +247,12 @@ class CodebaseToolRegistry:
             cmd.append(glob)
         try:
             result = subprocess.run(
-                cmd, cwd=str(self._root), capture_output=True, text=True, timeout=30, check=False,
+                cmd,
+                cwd=str(self._root),
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
             )
             # 128 = not a git repo or fatal error; treat as unavailable
             if result.returncode == 128:
@@ -245,10 +270,7 @@ class CodebaseToolRegistry:
         matches: list[str] = []
         for dirpath, dirnames, filenames in os.walk(self._root):
             # Skip large/generated dirs in-place so os.walk doesn't descend
-            dirnames[:] = [
-                d for d in dirnames
-                if d not in _SKIP_DIRS and not d.startswith(".")
-            ]
+            dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS and not d.startswith(".")]
             for filename in sorted(filenames):
                 if glob and not fnmatch.fnmatch(filename, glob):
                     continue
@@ -344,11 +366,14 @@ class CodebaseToolRegistry:
         if len(output) > MAX_GIT_DIFF_BYTES:
             output = output[:MAX_GIT_DIFF_BYTES] + "\n[...truncated]"
 
-        logger.debug("git_diff_file", path=str(safe_root), file=rel_file, base=base, size=len(output))
+        logger.debug(
+            "git_diff_file", path=str(safe_root), file=rel_file, base=base, size=len(output)
+        )
         return output
 
 
 # ── Pydantic parameter models ─────────────────────────────────────────────────
+
 
 class ReadFileParams(BaseModel):
     path: str = Field(
@@ -420,6 +445,7 @@ class GitDiffFileParams(BaseModel):
 
 # ── Tool builder ──────────────────────────────────────────────────────────────
 
+
 def build_codebase_tools(codebase_path: str) -> list[Tool]:
     """
     Build codebase tools locked to the given root path.
@@ -436,43 +462,53 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
     """
     registry = CodebaseToolRegistry(allowed_root=codebase_path)
 
-    @define_tool(description=(
-        "Read the text contents of a file in the codebase. "
-        "Returns the file content as a string."
-    ))
+    @define_tool(
+        description=(
+            "Read the text contents of a file in the codebase. "
+            "Returns the file content as a string."
+        )
+    )
     def read_file(params: ReadFileParams) -> str:
         return registry.read_file(params.path)
 
-    @define_tool(description=(
-        "List files and directories in a codebase path as an indented tree. "
-        "Respects .gitignore when inside a git repo. "
-        "Use to understand project structure before reading files. "
-        "If output is truncated, use grep_codebase to find specific files."
-    ))
+    @define_tool(
+        description=(
+            "List files and directories in a codebase path as an indented tree. "
+            "Respects .gitignore when inside a git repo. "
+            "Use to understand project structure before reading files. "
+            "If output is truncated, use grep_codebase to find specific files."
+        )
+    )
     def list_directory(params: ListDirectoryParams) -> str:
         return registry.list_directory(params.path, params.max_depth)
 
-    @define_tool(description=(
-        "Search file contents for a regex pattern. "
-        "Returns matching lines as 'file:line: content'. "
-        "Use this to find relevant files in large repos instead of browsing directories. "
-        "Supports an optional glob filter (e.g. '*.py', '*.ts')."
-    ))
+    @define_tool(
+        description=(
+            "Search file contents for a regex pattern. "
+            "Returns matching lines as 'file:line: content'. "
+            "Use this to find relevant files in large repos instead of browsing directories. "
+            "Supports an optional glob filter (e.g. '*.py', '*.ts')."
+        )
+    )
     def grep_codebase(params: GrepCodebaseParams) -> str:
         return registry.grep_codebase(params.pattern, params.glob, params.max_results)
 
-    @define_tool(description=(
-        "Get the full git diff for the repository against a ref. "
-        "Useful for understanding all recent changes. "
-        "For large diffs, use git_diff_file to focus on a single file."
-    ))
+    @define_tool(
+        description=(
+            "Get the full git diff for the repository against a ref. "
+            "Useful for understanding all recent changes. "
+            "For large diffs, use git_diff_file to focus on a single file."
+        )
+    )
     def git_diff(params: GitDiffParams) -> str:
         return registry.git_diff(params.path, params.base)
 
-    @define_tool(description=(
-        "Get the git diff for a single file within the repository. "
-        "Use this instead of git_diff when you only need changes for one file."
-    ))
+    @define_tool(
+        description=(
+            "Get the git diff for a single file within the repository. "
+            "Use this instead of git_diff when you only need changes for one file."
+        )
+    )
     def git_diff_file(params: GitDiffFileParams) -> str:
         return registry.git_diff_file(params.path, params.file, params.base)
 
@@ -480,6 +516,7 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _is_safe_git_ref(ref: str) -> bool:
     """Check that a git ref contains only safe characters."""

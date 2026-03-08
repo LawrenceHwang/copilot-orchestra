@@ -29,6 +29,7 @@ async def list_models(
                 name=m.name,
                 capabilities=m.capabilities.to_dict() if m.capabilities else None,
                 policy=m.policy.to_dict() if m.policy else None,
+                billing_multiplier=m.billing.multiplier if m.billing else None,
             )
             for m in raw_models
         ]
