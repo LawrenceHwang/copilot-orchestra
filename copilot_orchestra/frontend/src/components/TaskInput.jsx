@@ -93,7 +93,7 @@ export function TaskInput({ onSubmit, disabled }) {
               disabled={disabled}
               className="accent-indigo-500"
             />
-            <span className={`text-xs capitalize ${d("text-gray-300", "text-slate-600")}`}>
+            <span className={`text-xs capitalize whitespace-nowrap ${d("text-gray-300", "text-slate-600")}`}>
               {s === "full" ? "Full repo" : "Custom paths"}
             </span>
           </label>

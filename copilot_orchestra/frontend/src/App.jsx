@@ -6,13 +6,20 @@ import { MetricsBar } from "./components/MetricsBar.jsx";
 import { ModelRouterPanel } from "./components/ModelRouterPanel.jsx";
 import { SynthesisPanel } from "./components/SynthesisPanel.jsx";
 import { TaskInput } from "./components/TaskInput.jsx";
-import { ThemeProvider, useTheme, useThemeClasses } from "./ThemeContext.jsx";
 import { useSSE } from "./hooks/useSSE.js";
+import { ThemeProvider, useTheme, useThemeClasses } from "./ThemeContext.jsx";
 import { generateReviewerNames } from "./utils/nameGenerator.js";
 
 // ── State shape ───────────────────────────────────────────────────────────────
 
 const AGENT_ROLES = ["reviewer_1", "reviewer_2", "reviewer_3"];
+
+function resolveContextWindowTokens(modelId, models) {
+  if (!modelId) return null;
+  const model = models.find((m) => m.id === modelId);
+  const n = model?.capabilities?.limits?.max_context_window_tokens;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
 
 function makeAgentState() {
   return {
@@ -36,7 +43,7 @@ const initialState = {
   agents: Object.fromEntries(AGENT_ROLES.map((r) => [r, makeAgentState()])),
   orchestrator: makeAgentState(),
   synthesis: makeSynthState(),
-  metrics: {},             // { [agentRole]: { input_tokens, output_tokens, cost, quota } }
+  metrics: {},             // { [agentRole]: { input_tokens, output_tokens, turns, quota, model, context_window_tokens } }
   globalError: null,
   timers: {
     reviewStartedAt: null,   // ms — set when review is submitted
@@ -78,8 +85,21 @@ function reducer(state, action) {
           agents: { ...state.agents, [action.agent]: { ...state.agents[action.agent], status: "running", model: action.model } },
         };
       }
+      const prevMetrics = state.metrics[action.agent] || {};
       return {
         ...next,
+        metrics: {
+          ...next.metrics,
+          [action.agent]: {
+            input_tokens: prevMetrics.input_tokens ?? 0,
+            output_tokens: prevMetrics.output_tokens ?? 0,
+            turns: prevMetrics.turns ?? 0,
+            quota: prevMetrics.quota ?? null,
+            model: action.model || prevMetrics.model || null,
+            context_window_tokens:
+              action.context_window_tokens ?? prevMetrics.context_window_tokens ?? null,
+          },
+        },
         timers: {
           ...next.timers,
           agents: { ...next.timers.agents, [action.agent]: { startedAt: action.timestamp, doneAt: null } },
@@ -170,19 +190,24 @@ function reducer(state, action) {
       };
     }
 
-    case "METRICS_UPDATE":
+    case "METRICS_UPDATE": {
+      const prev = state.metrics[action.agent] || {};
       return {
         ...state,
         metrics: {
           ...state.metrics,
           [action.agent]: {
-            input_tokens: action.input_tokens,
-            output_tokens: action.output_tokens,
-            cost: action.cost,
-            quota: action.quota,
+            input_tokens: action.input_tokens ?? prev.input_tokens ?? 0,
+            output_tokens: action.output_tokens ?? prev.output_tokens ?? 0,
+            turns: action.turns ?? prev.turns ?? 0,
+            quota: action.quota ?? prev.quota ?? null,
+            model: action.model || prev.model || null,
+            context_window_tokens:
+              action.context_window_tokens ?? prev.context_window_tokens ?? null,
           },
         },
       };
+    }
 
     case "REVIEW_COMPLETE":
       return {
@@ -251,9 +276,13 @@ function AppInner() {
   const [submitting, setSubmitting] = useState(false);
   const [connectionError, setConnectionError] = useState(null);
   const [infoOpen, setInfoOpen] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(288);
+  const [sidebarWidth, setSidebarWidth] = useState(360);
   const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 768);
+  const [expandedPanel, setExpandedPanel] = useState(null);
   const dragState = useRef({ active: false, startX: 0, startW: 0 });
+  // Track which agents have received at least one agent.stream event this review.
+  // Used to prevent agent.message from doubling content when the SDK emits both.
+  const streamedAgentsRef = useRef(new Set());
 
   // Persist state to sessionStorage whenever it changes (skip idle — nothing to save)
   useEffect(() => {
@@ -278,7 +307,7 @@ function AppInner() {
   useEffect(() => {
     function onMove(e) {
       if (!dragState.current.active) return;
-      const w = Math.max(200, Math.min(520, dragState.current.startW + e.clientX - dragState.current.startX));
+      const w = Math.max(260, Math.min(560, dragState.current.startW + e.clientX - dragState.current.startX));
       setSidebarWidth(w);
     }
     function onUp() { dragState.current.active = false; }
@@ -295,10 +324,15 @@ function AppInner() {
     e.preventDefault();
   }
 
+  const [byokActive, setByokActive] = useState(false);
+
   // Load available models on mount
   useEffect(() => {
     fetchModels()
-      .then((data) => setModels(data.models || []))
+      .then((data) => {
+        setModels(data.models || []);
+        setByokActive(data.byok_active || false);
+      })
       .catch(() => setModels([]));
   }, []);
 
@@ -307,14 +341,22 @@ function AppInner() {
     const ts = Date.now();
     switch (event.type) {
       case "agent.started":
-        dispatch({ type: "AGENT_STARTED", agent: event.agent, model: event.model, timestamp: ts });
+        dispatch({
+          type: "AGENT_STARTED",
+          agent: event.agent,
+          model: event.model,
+          context_window_tokens: resolveContextWindowTokens(event.model, models),
+          timestamp: ts,
+        });
         break;
       case "agent.stream":
+        streamedAgentsRef.current.add(event.agent);
         dispatch({ type: "AGENT_STREAM", agent: event.agent, content: event.content });
         break;
       case "agent.message":
-        // Final message — use it if stream text is empty (non-streaming mode)
-        if (!state.agents[event.agent]?.streamText) {
+        // Final message — fallback for non-streaming models only.
+        // Skip if we already received agent.stream events for this agent to avoid doubling.
+        if (!streamedAgentsRef.current.has(event.agent)) {
           dispatch({ type: "AGENT_STREAM", agent: event.agent, content: event.content });
         }
         break;
@@ -328,7 +370,17 @@ function AppInner() {
         dispatch({ type: "AGENT_ERROR", agent: event.agent, error: event.error });
         break;
       case "metrics.update":
-        dispatch({ type: "METRICS_UPDATE", ...event });
+        dispatch({
+          type: "METRICS_UPDATE",
+          agent: event.agent,
+          input_tokens: event.input_tokens,
+          output_tokens: event.output_tokens,
+          turns: event.turns,
+          quota: event.quota,
+          model: event.model,
+          context_window_tokens:
+            event.context_window_tokens ?? resolveContextWindowTokens(event.model, models),
+        });
         break;
       case "review.complete":
         dispatch({ type: "REVIEW_COMPLETE", timestamp: ts });
@@ -340,7 +392,7 @@ function AppInner() {
         dispatch({ type: "STREAM_END", timestamp: ts });
         break;
     }
-  }, []);
+  }, [models]);
 
   const { connected, error: sseError } = useSSE(state.sseUrl, handleEvent);
 
@@ -356,6 +408,7 @@ function AppInner() {
           : undefined,
       };
       const { review_id, sse_url } = await startReview(payload);
+      streamedAgentsRef.current = new Set();
       dispatch({ type: "REVIEW_STARTED", reviewId: review_id, sseUrl: sse_url, timestamp: Date.now() });
     } catch (err) {
       setConnectionError(err.message);
@@ -385,7 +438,7 @@ function AppInner() {
           <span className={`text-sm font-bold tracking-tight ${d("text-gray-100", "text-gray-900")}`}>
             Copilot Orchestra
           </span>
-          <span className={`text-[10px] border px-1.5 py-0.5 rounded ${d("text-gray-600 border-gray-700", "text-slate-400 border-slate-200")}`}>
+          <span className={`text-[10px] border px-1.5 py-0.5 rounded ${d("text-gray-300 border-gray-700", "text-slate-600 border-slate-200")}`}>
             v0.1
           </span>
         </div>
@@ -393,7 +446,7 @@ function AppInner() {
         <div className="flex items-center gap-3">
           {/* Overall timer */}
           {state.timers.reviewStartedAt && (
-            <div className={`flex items-center gap-1 text-xs font-mono ${d("text-gray-400", "text-slate-500")}`}>
+            <div className={`flex items-center gap-1 text-xs font-mono ${d("text-gray-200", "text-slate-600")}`}>
               <span>⏱</span>
               <ElapsedTime
                 startedAt={state.timers.reviewStartedAt}
@@ -417,14 +470,13 @@ function AppInner() {
             <button
               onClick={() => setInfoOpen((o) => !o)}
               title="About Copilot Orchestra"
-              className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                infoOpen
-                  ? d("border-indigo-500 text-indigo-400", "border-indigo-400 text-indigo-600")
-                  : d(
-                      "border-gray-700 text-gray-400 hover:text-gray-100 hover:border-gray-500",
-                      "border-slate-200 text-slate-500 hover:text-slate-800 hover:border-slate-400"
-                    )
-              }`}
+              className={`text-xs px-2.5 py-1 rounded border transition-colors ${infoOpen
+                ? d("border-indigo-500 text-indigo-400", "border-indigo-400 text-indigo-600")
+                : d(
+                  "border-gray-700 text-gray-400 hover:text-gray-100 hover:border-gray-500",
+                  "border-slate-200 text-slate-500 hover:text-slate-800 hover:border-slate-400"
+                )
+                }`}
             >
               ?
             </button>
@@ -437,9 +489,8 @@ function AppInner() {
                   onClick={() => setInfoOpen(false)}
                 />
                 {/* Panel */}
-                <div className={`absolute right-0 top-8 z-50 w-80 rounded-lg border shadow-2xl p-4 space-y-3 ${
-                  d("bg-gray-900 border-gray-700 text-gray-300", "bg-white border-slate-200 text-slate-700")
-                }`}>
+                <div className={`absolute right-0 top-8 z-50 w-80 rounded-lg border shadow-2xl p-4 space-y-3 ${d("bg-gray-900 border-gray-700 text-gray-300", "bg-white border-slate-200 text-slate-700")
+                  }`}>
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <h2 className={`text-sm font-semibold ${d("text-gray-100", "text-slate-900")}`}>
@@ -501,9 +552,8 @@ function AppInner() {
                     </ul>
                   </div>
 
-                  <p className={`text-[10px] leading-relaxed border-t pt-2 ${
-                    d("border-gray-800 text-gray-500", "border-slate-100 text-slate-400")
-                  }`}>
+                  <p className={`text-[10px] leading-relaxed border-t pt-2 ${d("border-gray-800 text-gray-500", "border-slate-100 text-slate-400")
+                    }`}>
                     The orchestration layer is UI-agnostic — a TUI or CI integration could import it directly without touching the FastAPI layer.
                   </p>
                 </div>
@@ -515,12 +565,11 @@ function AppInner() {
           <button
             onClick={toggle}
             title="Toggle theme"
-            className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-              d(
-                "border-gray-700 text-gray-400 hover:text-gray-100 hover:border-gray-500",
-                "border-slate-200 text-slate-500 hover:text-slate-800 hover:border-slate-400"
-              )
-            }`}
+            className={`text-xs px-2.5 py-1 rounded border transition-colors ${d(
+              "border-gray-700 text-gray-200 hover:text-white hover:border-gray-500",
+              "border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-400"
+            )
+              }`}
           >
             {theme === "dark" ? "☀ Light" : "☾ Dark"}
           </button>
@@ -528,14 +577,13 @@ function AppInner() {
       </header>
 
       {/* Metrics bar */}
-      <MetricsBar metrics={state.metrics} reviewStatus={state.reviewStatus} />
+      <MetricsBar metrics={state.metrics} reviewStatus={state.reviewStatus} reviewerNames={reviewerNames} models={models} byokActive={byokActive} />
 
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left sidebar — controls */}
         <aside
-          className={`flex-shrink-0 border-b md:border-b-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 max-h-[45vh] md:max-h-none w-full ${
-            d("bg-gray-950 border-gray-800", "bg-slate-50 border-slate-200")
-          }`}
+          className={`flex-shrink-0 border-b md:border-b-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 max-h-[45vh] md:max-h-none w-full ${d("bg-gray-950 border-gray-800", "bg-slate-50 border-slate-200")
+            }`}
           style={isDesktop ? { width: sidebarWidth } : {}}
         >
           <TaskInput onSubmit={handleSubmit} disabled={isRunning || submitting} />
@@ -558,39 +606,34 @@ function AppInner() {
               Review failed: {state.globalError}
             </div>
           )}
-
-          {/* Orchestrator panel in sidebar */}
-          {(state.orchestrator.status !== "idle" || state.orchestrator.streamText) && (
-            <div>
-              <p className={`text-[10px] uppercase tracking-wider mb-1 ${d("text-gray-600", "text-slate-400")}`}>
-                Orchestrator
-              </p>
-              <div className={`rounded border overflow-hidden max-h-48 ${d("bg-gray-900 border-gray-800", "bg-white border-slate-200")}`}>
-                <div className="overflow-y-auto p-2">
-                  <pre className={`stream-text text-[10px] ${d("text-indigo-300", "text-indigo-600")}`}>
-                    {state.orchestrator.streamText || "Planning review..."}
-                  </pre>
-                  {state.orchestrator.toolCalls.map((tc, i) => (
-                    <div key={i} className="tool-badge mt-1 text-[10px]">
-                      {tc.tool_name}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </aside>
 
         {/* Resize handle — desktop only */}
         <div
-          className={`hidden md:flex w-1 flex-shrink-0 cursor-col-resize transition-colors ${
-            d("bg-gray-800 hover:bg-indigo-600", "bg-slate-200 hover:bg-indigo-400")
-          }`}
+          className={`hidden md:flex w-1 flex-shrink-0 cursor-col-resize transition-colors ${d("bg-gray-800 hover:bg-indigo-600", "bg-slate-200 hover:bg-indigo-400")
+            }`}
           onMouseDown={onResizeStart}
         />
 
         {/* Main content */}
         <div className="flex-1 overflow-y-auto p-3 space-y-3 flex flex-col">
+          {/* Orchestrator panel — full-width horizontal bar above reviewers */}
+          {(isRunning || state.reviewStatus === "complete") && (state.orchestrator.status !== "idle" || state.orchestrator.streamText) && (
+            <AgentPanel
+              role="orchestrator"
+              name="Orchestrator"
+              state={state.orchestrator}
+              timer={state.timers.agents["orchestrator"]}
+              reviewStartedAt={state.timers.reviewStartedAt}
+              metrics={state.metrics["orchestrator"]}
+              isExpanded={expandedPanel === "orchestrator"}
+              onExpand={() => setExpandedPanel("orchestrator")}
+              onCollapse={() => setExpandedPanel(null)}
+              className="max-h-[260px]"
+              compactWhenDone
+            />
+          )}
+
           {/* Specialist agents — responsive columns */}
           {(isRunning || state.reviewStatus === "complete") && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" style={{ minHeight: "350px" }}>
@@ -603,6 +646,9 @@ function AppInner() {
                   timer={state.timers.agents[role]}
                   reviewStartedAt={state.timers.reviewStartedAt}
                   metrics={state.metrics[role]}
+                  isExpanded={expandedPanel === role}
+                  onExpand={() => setExpandedPanel(role)}
+                  onCollapse={() => setExpandedPanel(null)}
                 />
               ))}
             </div>
@@ -614,6 +660,9 @@ function AppInner() {
               state={state.synthesis}
               timer={state.timers.agents["synthesizer"]}
               metrics={state.metrics["synthesizer"]}
+              isExpanded={expandedPanel === "synthesizer"}
+              onExpand={() => setExpandedPanel("synthesizer")}
+              onCollapse={() => setExpandedPanel(null)}
             />
           )}
 

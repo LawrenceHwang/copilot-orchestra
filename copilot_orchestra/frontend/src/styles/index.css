@@ -3,6 +3,15 @@
 @tailwind utilities;
 
 @layer base {
+
+  /* Scale root font to 112.5% (90% of the original 125%).
+     125% was chosen to match the preferred browser zoom level; after review the
+     UI felt slightly large, so it was trimmed to 112.5% for a more comfortable
+     information density while keeping all rem-based Tailwind sizes proportional. */
+  html {
+    font-size: 112.5%;
+  }
+
   /* Light theme is the default */
   body {
     @apply bg-slate-50 text-gray-900 font-mono text-sm;
@@ -17,9 +26,11 @@
   ::-webkit-scrollbar {
     @apply w-1.5;
   }
+
   ::-webkit-scrollbar-track {
     @apply bg-slate-100;
   }
+
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-300 rounded-full;
   }
@@ -28,12 +39,14 @@
   [data-theme="dark"] ::-webkit-scrollbar-track {
     @apply bg-gray-900;
   }
+
   [data-theme="dark"] ::-webkit-scrollbar-thumb {
     @apply bg-gray-700 rounded-full;
   }
 }
 
 @layer components {
+
   /* Stream text — monospace, wraps gracefully */
   .stream-text {
     @apply font-mono text-xs leading-relaxed whitespace-pre-wrap break-words;
@@ -47,53 +60,63 @@
 
   /* Tool call badge — light default */
   .tool-badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs
-           bg-slate-100 text-slate-600 border border-slate-200;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600 border border-slate-200;
   }
+
   [data-theme="dark"] .tool-badge {
-    @apply bg-gray-800 text-gray-400 border-gray-700;
+    @apply bg-gray-800 text-gray-200 border-gray-700;
   }
 
   /* Model tag — light default */
   .model-tag {
-    @apply text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500
-           font-mono border border-slate-200;
+    @apply text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-mono border border-slate-200;
   }
+
   [data-theme="dark"] .model-tag {
-    @apply bg-gray-800 text-gray-400 border-gray-700;
+    @apply bg-gray-800 text-gray-200 border-gray-700;
   }
 
   /* Synthesizer markdown report */
   .synthesis-markdown h1 {
     @apply text-lg font-bold text-gray-900 mt-4 mb-2;
   }
+
   .synthesis-markdown h2 {
     @apply text-base font-semibold text-violet-700 mt-4 mb-1.5 border-b border-slate-200 pb-1;
   }
+
   .synthesis-markdown h3 {
     @apply text-sm font-semibold text-gray-800 mt-3 mb-1;
   }
+
   .synthesis-markdown p {
     @apply text-sm text-gray-800 mb-2 leading-relaxed;
   }
+
   .synthesis-markdown ul {
     @apply list-disc pl-5 mb-2 space-y-1;
   }
+
   .synthesis-markdown ol {
     @apply list-decimal pl-5 mb-2 space-y-1;
   }
+
   .synthesis-markdown li {
     @apply text-sm text-gray-800 leading-relaxed;
   }
+
   .synthesis-markdown strong {
     @apply font-semibold text-gray-900;
   }
+
   .synthesis-markdown code {
     @apply font-mono text-xs bg-slate-100 text-violet-700 px-1 py-0.5 rounded border border-slate-200;
   }
+
   .synthesis-markdown hr {
     @apply border-slate-200 my-3;
   }
+
   .synthesis-markdown blockquote {
     @apply border-l-2 border-violet-400 pl-3 text-gray-600 italic;
   }
@@ -102,26 +125,33 @@
   [data-theme="dark"] .synthesis-markdown h1 {
     @apply text-gray-100;
   }
+
   [data-theme="dark"] .synthesis-markdown h2 {
     @apply text-violet-300 border-gray-800;
   }
+
   [data-theme="dark"] .synthesis-markdown h3 {
     @apply text-gray-200;
   }
+
   [data-theme="dark"] .synthesis-markdown p,
   [data-theme="dark"] .synthesis-markdown li {
     @apply text-gray-300;
   }
+
   [data-theme="dark"] .synthesis-markdown strong {
     @apply text-gray-100;
   }
+
   [data-theme="dark"] .synthesis-markdown code {
     @apply bg-gray-800 text-violet-300;
   }
+
   [data-theme="dark"] .synthesis-markdown hr {
     @apply border-gray-700;
   }
+
   [data-theme="dark"] .synthesis-markdown blockquote {
-    @apply border-violet-600 text-gray-400;
+    @apply border-violet-600 text-gray-300;
   }
 }
