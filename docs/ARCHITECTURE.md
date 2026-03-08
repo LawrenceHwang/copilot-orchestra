@@ -358,7 +358,7 @@ The two integration patterns:
 
 ## Extensibility: TUI
 
-The `backend/orchestration/` package has zero FastAPI imports. A future TUI (`tui/app.py`)
+The `src/backend/orchestration/` package has zero FastAPI imports. A future TUI (`tui/app.py`)
 can import `SessionManager`, `EventBus`, `ModelRouter`, `ReviewStore`, and `run_review`
 directly, subscribe to the `EventBus` with its own queue, and render events using Textual
 or Rich.

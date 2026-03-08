@@ -594,7 +594,7 @@ The `model_preset` and `model_overrides` fields work the same way.
 - The `review_id` is a UUID4 string — store it if you need to re-fetch results.
 - Review state is **in-memory only**. After a server restart, all review IDs are gone.
   If durability is required, integrate a persistent store at `ReviewStore` in
-  `backend/orchestration/review_store.py`.
+  `src/backend/orchestration/review_store.py`.
 - CORS: by default the server allows `http://localhost:5173` and `http://localhost:3000`.
   Add origins via the `CORS_ORIGINS` env var (comma-separated).
 - The interactive OpenAPI spec is served at `/api/openapi.json` (machine-readable)

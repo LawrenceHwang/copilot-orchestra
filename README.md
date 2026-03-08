@@ -71,9 +71,6 @@ close icon returns it to inline size.
 ## Quick Start
 
 ```bash
-# Clone and enter the project
-cd copilot_orchestra
-
 # Install Python dependencies
 uv sync
 
@@ -85,7 +82,7 @@ cp .env.example .env
 uv run uvicorn backend.main:app --reload --port 8000
 
 # In another terminal, start frontend
-cd frontend
+cd src/frontend
 npm install
 npm run dev
 # Open http://localhost:5173
@@ -104,33 +101,34 @@ BYOK_BASE_URL=                        # optional; uses provider default
 ## Project Structure
 
 ```
-copilot_orchestra/
+.
 ├── SPEC.md                     # Product specification
 ├── docs/
 │   ├── ARCHITECTURE.md         # System architecture
 │   ├── API_SPEC.yaml           # OpenAPI 3.0 spec
 │   ├── EVENT_SCHEMA.md         # SSE event schema reference
 │   └── adr/                    # Architecture Decision Records
-├── backend/
-│   ├── main.py                 # FastAPI entry point
-│   ├── config.py               # Settings via pydantic-settings
-│   ├── logging_config.py       # Structured logging setup
-│   ├── api/                    # HTTP layer (routes, schemas, dependencies)
-│   ├── orchestration/          # UI-agnostic orchestration core
-│   │   ├── model_router.py     # Model selection logic
-│   │   ├── event_bus.py        # asyncio fan-out event bus
-│   │   ├── session_manager.py  # CopilotClient lifecycle
-│   │   ├── orchestrator.py     # Top-level review flow
-│   │   └── agents/             # One module per agent role
-│   └── tools/
-│       └── codebase.py         # File-system tools (path-safe)
-├── tests/
-│   ├── unit/                   # Fast, no CLI dependency
-│   └── integration/            # Requires running CLI (skipped by default)
-└── frontend/
-    └── src/
-        ├── components/         # AgentPanel, MetricsBar, etc.
-        └── hooks/useSSE.js     # EventSource hook
+├── src/
+│   ├── backend/
+│   │   ├── main.py                 # FastAPI entry point
+│   │   ├── config.py               # Settings via pydantic-settings
+│   │   ├── logging_config.py       # Structured logging setup
+│   │   ├── api/                    # HTTP layer (routes, schemas, dependencies)
+│   │   ├── orchestration/          # UI-agnostic orchestration core
+│   │   │   ├── model_router.py     # Model selection logic
+│   │   │   ├── event_bus.py        # asyncio fan-out event bus
+│   │   │   ├── session_manager.py  # CopilotClient lifecycle
+│   │   │   ├── orchestrator.py     # Top-level review flow
+│   │   │   └── agents/             # One module per agent role
+│   │   └── tools/
+│   │       └── codebase.py         # File-system tools (path-safe)
+│   └── frontend/
+│       └── src/
+│           ├── components/         # AgentPanel, MetricsBar, etc.
+│           └── hooks/useSSE.js     # EventSource hook
+└── tests/
+    ├── unit/                   # Fast, no CLI dependency
+    └── integration/            # Requires running CLI (skipped by default)
 ```
 
 ## Running Tests
@@ -143,7 +141,7 @@ uv run pytest tests/unit -v
 uv run pytest -v -m "not integration"
 
 # With coverage
-uv run pytest tests/unit --cov=backend --cov-report=term-missing
+uv run pytest tests/unit --cov=src/backend --cov-report=term-missing
 ```
 
 ## Model Presets

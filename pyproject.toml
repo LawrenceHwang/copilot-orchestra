@@ -31,7 +31,7 @@ package = false
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-pythonpath = ["."]
+pythonpath = ["src"]
 markers = [
     "integration: marks tests that require a running Copilot CLI (deselect with -m 'not integration')",
 ]
@@ -56,7 +56,7 @@ ignore = [
 
 [tool.coverage.run]
 source = ["backend"]
-omit = ["tests/*", "backend/main.py"]
+omit = ["tests/*", "src/backend/main.py"]
 
 [tool.coverage.report]
 show_missing = true
