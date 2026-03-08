@@ -81,14 +81,32 @@ cp .env.example .env
 # Edit .env as needed (defaults work if Copilot CLI is authenticated)
 
 # Start backend
+cd src
 uv run uvicorn backend.main:app --reload --port 8000
 
-# In another terminal, start frontend
+# In another terminal (from repo root), start frontend
 cd src/frontend
 npm install
 npm run dev
 # Open http://localhost:5173
 ```
+
+## One-Command Launch Scripts
+
+Use the scripts in `scripts/` to start backend and frontend together.
+
+```bash
+# macOS / Linux
+./scripts/start-app.sh
+```
+
+```powershell
+# Windows PowerShell
+.\scripts\start-app.ps1
+```
+
+The scripts run from the repository root, start the backend on `:8000` and the frontend on `:5173`,
+and stop the backend automatically when you stop the frontend process.
 
 ## BYOK Configuration
 

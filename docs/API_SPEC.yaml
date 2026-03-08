@@ -161,7 +161,7 @@ components:
         codebase_path:
           type: string
           description: Absolute path to the local codebase directory
-          example: "/Users/law/workplace/GitHub/global-demographics"
+          example: ""
         scope:
           type: string
           enum: [full, custom]

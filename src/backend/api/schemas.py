@@ -45,7 +45,7 @@ class ReviewRequest(BaseModel):
     )
     codebase_path: str = Field(
         description="Absolute path to the local codebase directory",
-        examples=["/Users/law/workplace/GitHub/global-demographics"],
+        examples=[""],
     )
     scope: Literal["full", "custom"] = Field(
         default="full",

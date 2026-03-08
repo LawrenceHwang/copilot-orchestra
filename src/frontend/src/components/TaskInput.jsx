@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useThemeClasses } from "../ThemeContext.jsx";
 
-const DEFAULT_PATH = "/Users/law/workplace/GitHub/global-demographics";
+const DEFAULT_PATH = "";
 
 /**
  * TaskInput — form for starting a review.
