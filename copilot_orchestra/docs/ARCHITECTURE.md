@@ -44,7 +44,6 @@ Single source of truth for model selection. Priority chain:
 User Override  >  Orchestrator Choice  >  Config Preset  >  Hardcoded Default
 ```
 
-- Presets: `balanced`, `economy`, `performance`, `auto`
 - Presets: `balanced`, `economy`, `performance`, `free`, `auto`
 - `free` preset is resolved dynamically from SDK model metadata: models with
   `billing.multiplier == 0.0` and enabled policy state are eligible.

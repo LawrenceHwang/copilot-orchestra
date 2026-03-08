@@ -84,7 +84,7 @@ request counts update live.
 | N9 | All five agents (including orchestrator) publish identical event sets: `agent.started`, `agent.done` (with `duration_ms`), `metrics.update`, tool call events |
 | N12 | UI text contrast must keep operational metadata (timers, status chips, usage-row labels, badge text) clearly readable in both dark and light themes; avoid low-contrast gray-on-gray combinations for critical runtime information |
 | N13 | The main content area layout flows top-to-bottom: Orchestrator (full-width) → 3 Reviewers (grid) → Synthesizer (full-width). The sidebar contains only task input and model router controls. |
-| N14 | Base font size is set to 125% on the `html` element (`frontend/src/styles/index.css`), scaling all rem-based Tailwind sizes proportionally. This matches the visual density preferred at 125% browser zoom. The sidebar default width is 360px (up from 288px) to match the larger effective font size; drag range is 260–560px. Radio labels in the scope selector use `whitespace-nowrap` to prevent mid-word wrapping. |
+| N14 | Base font size is set to 112.5% on the `html` element (`frontend/src/styles/index.css`), scaling all rem-based Tailwind sizes proportionally. This balances information density with readability. The sidebar default width is 360px; drag range is 260–560px. Radio labels in the scope selector use `whitespace-nowrap` to prevent mid-word wrapping. |
 | N15 | All agent system prompts follow a no-hedging behavioral contract: agents never ask "Would you like me to…", never offer to look at additional things, and never end with questions or prompts. They read the code, form judgment, and write the output. Full stop. |
 | N16 | Agent prompt design targets FAANG principal/staff-engineer calibre: direct, opinionated, severity-calibrated, mentor-voiced. Each reviewer has a distinct vertical specialization (Architecture, Backend, Frontend) on top of a shared engineering baseline. |
 | N17 | Every `send_and_wait` call must pass an explicit `timeout` parameter. The SDK's internal default (60 s) is too short for the synthesizer and deep-thinking models; omitting it causes silent mid-stream truncation that looks like a streaming failure. |
@@ -95,7 +95,7 @@ request counts update live.
 ### Primary: Start a Review (Browser)
 
 ```
-1. Enter codebase path  (default: /Users/law/workplace/GitHub/global-demographics)
+1. Enter codebase path  (e.g. /path/to/your/repo)
 2. Enter task description  (e.g. "Review for security and performance issues")
 3. Choose scope: Full Repo | Custom Paths
 4. Choose model preset or configure per-agent overrides

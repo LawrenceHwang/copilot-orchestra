@@ -1,7 +1,7 @@
 # Copilot Orchestra
 
 A multi-agent AI code review platform built on the [GitHub Copilot SDK](https://github.com/github/copilot-sdk).
-Five Copilot sessions run in parallel to deliver Security, Performance, and Readability reviews
+Five Copilot sessions run in parallel to deliver Architecture, Backend, and Frontend reviews
 simultaneously, with a Synthesizer that unifies all findings into one report.
 
 Real-time streaming, live token/context/premium-request metrics (per-agent context window %,
@@ -41,9 +41,9 @@ close icon returns it to inline size.
 │  ┌────────────────────────────────────────────────────────┐│
 │  │                   Orchestrator                        ││
 │  └────────────────────────────────────────────────────────┘│
-│  ┌──────────┐ ┌───────────┐ ┌──────────┐                  │
-│  │ Security │ │Performance│ │Readabilty│  ← 3 reviewers   │
-│  └──────────┘ └───────────┘ └──────────┘                  │
+│  ┌────────────┐ ┌─────────┐ ┌──────────┐                  │
+│  │Architecture│ │ Backend │ │ Frontend │  ← 3 reviewers   │
+│  └────────────┘ └─────────┘ └──────────┘                  │
 │  ┌────────────────────────────────────────────────────────┐│
 │  │                  Synthesis Report                     ││
 │  └────────────────────────────────────────────────────────┘│
@@ -56,7 +56,7 @@ close icon returns it to inline size.
                            │
 ┌─ Orchestration Core (UI-agnostic) ────────────────────────┐
 │  ModelRouter  │  SessionManager  │  EventBus               │
-│  Orchestrator → Security + Performance + Readability (∥)  │
+│  Orchestrator → Architecture + Backend + Frontend (∥)     │
 │  → Synthesizer                                            │
 └──────────────────── Copilot SDK ──────────────────────────┘
 ```
