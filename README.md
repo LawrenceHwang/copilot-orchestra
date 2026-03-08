@@ -4,6 +4,8 @@ A multi-agent AI code review platform built on the [GitHub Copilot SDK](https://
 Five Copilot sessions run in parallel to deliver Architecture, Backend, and Frontend reviews
 simultaneously, with a Synthesizer that unifies all findings into one report.
 
+![example](./assets/example.png)
+
 Real-time streaming, live token/context/premium-request metrics (per-agent context window %,
 IN/OUT tokens, estimated cost via premium request pricing, and quota consumed), and a pluggable Model Router make this a showcase
 of what the SDK enables beyond the CLI.

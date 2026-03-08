@@ -303,7 +303,7 @@ without relaxing path-safety constraints.
   "task": "Focus on authentication, session management, and SQL injection risks",
   "codebase_path": "/absolute/path/to/repo",
   "scope": "custom",
-  "custom_paths": ["src/auth", "src/api/routes.py", "db/migrations"],
+  "custom_paths": ["src/backend/api", "src/backend/orchestration/orchestrator.py", "src/frontend/src/components/TaskInput.jsx"],
   "model_preset": "performance",
   "model_overrides": {
     "orchestrator": "claude-sonnet-4-6",

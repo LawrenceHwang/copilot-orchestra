@@ -46,19 +46,17 @@ export function TaskInput({ onSubmit, disabled }) {
   }
 
   const inputCls = `w-full text-xs rounded px-3 py-2 font-mono focus:outline-none
-    disabled:opacity-50 disabled:cursor-not-allowed ${
-    d(
-      "bg-gray-800 border border-gray-700 text-gray-200 focus:border-indigo-500 placeholder-gray-600",
-      "bg-white border border-slate-200 text-gray-800 focus:border-indigo-400 placeholder-slate-400 shadow-sm"
-    )
-  }`;
+    disabled:opacity-50 disabled:cursor-not-allowed ${d(
+    "bg-gray-800 border border-gray-700 text-gray-200 focus:border-indigo-500 placeholder-gray-600",
+    "bg-white border border-slate-200 text-gray-800 focus:border-indigo-400 placeholder-slate-400 shadow-sm"
+  )
+    }`;
 
   return (
     <form
       onSubmit={handleSubmit}
-      className={`rounded-lg border p-4 space-y-3 ${
-        d("bg-gray-900 border-gray-800", "bg-white border-slate-200 shadow-sm")
-      }`}
+      className={`rounded-lg border p-4 space-y-3 ${d("bg-gray-900 border-gray-800", "bg-white border-slate-200 shadow-sm")
+        }`}
     >
       <h3 className={`text-xs font-semibold uppercase tracking-wider ${d("text-gray-400", "text-slate-500")}`}>
         Review Task
@@ -111,7 +109,7 @@ export function TaskInput({ onSubmit, disabled }) {
             onChange={(e) => setCustomPaths(e.target.value)}
             disabled={disabled}
             rows={3}
-            placeholder={"src/auth\nsrc/api/routes.py"}
+            placeholder={"src/backend/api\nsrc/frontend/src/components/TaskInput.jsx"}
             className={`${inputCls} resize-none`}
           />
         </div>

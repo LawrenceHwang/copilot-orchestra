@@ -172,16 +172,17 @@ components:
           items:
             type: string
           description: Specific file/directory paths (required when scope=custom)
-          example: ["src/auth", "src/api/routes.py"]
+          example:
+            ["src/backend/api", "src/frontend/src/components/TaskInput.jsx"]
         model_preset:
           type: string
-            enum: [balanced, economy, performance, free, auto]
+          enum: [balanced, economy, performance, free, auto]
           default: balanced
           description: |
             balanced: claude-sonnet-4-6 for all roles (hardcoded default)
             economy: claude-haiku-4-5-20251001 for all roles
             performance: claude-opus-4-6 for all roles
-             free: dynamically discovered 0x models only (billing.multiplier == 0.0)
+            free: dynamically discovered 0x models only (billing.multiplier == 0.0)
             auto: orchestrator selects per-reviewer model via suggested_models in ReviewPlan
         model_overrides:
           $ref: "#/components/schemas/ModelOverrides"
