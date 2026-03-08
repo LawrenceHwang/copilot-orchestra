@@ -7,6 +7,8 @@ and stream the full workflow into a UI that is easy to inspect.
 This project is intentionally positioned as a learning and validation sandbox rather than a finished product.
 It exists to explore how a multi-agent Copilot SDK workflow behaves in practice, what the SDK makes easy,
 where orchestration needs more care, and how the experience feels when you expose the whole loop in real time.
+It also makes it easier to test an important practical question: when should different roles use different models,
+and how much control should the system keep versus the user?
 
 Five Copilot sessions run in parallel:
 
@@ -30,6 +32,17 @@ Instead of treating the SDK as a black box, this PoC shows the moving parts clea
 
 If you are evaluating whether the Copilot SDK can support more than a single chat loop,
 this repo is meant to be a practical reference.
+
+The model router is especially valuable here. In a multi-agent workflow, not every role has the same job,
+latency tolerance, or cost profile. The router makes that explicit by letting the app:
+
+- keep sensible defaults for a stable baseline
+- swap models by preset when you want to compare speed, quality, or cost
+- allow user overrides per role
+- allow orchestrator-selected models at runtime in `auto` mode
+- fail fast when a preset such as `free` cannot be satisfied
+
+That turns model choice into something you can reason about and test, instead of a hardcoded implementation detail.
 
 ## What The App Shows
 
@@ -79,6 +92,10 @@ status chips, badge labels, and usage details across both light and dark themes.
 The backend orchestration layer is UI-agnostic. FastAPI handles transport and API boundaries,
 while the orchestration core manages model selection, session lifecycle, event fan-out, and
 agent coordination.
+
+For this PoC, the router is one of the most useful pieces of infrastructure because it separates orchestration logic
+from model policy. That makes it much easier to experiment with questions like whether the synthesizer should use a
+stronger model, whether reviewers can run on cheaper models, or whether user overrides should win over runtime choices.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 
@@ -161,6 +178,10 @@ The display format is explicit: `CTX <percent>% of <window>`.
 > measuring how much of the model's available context window is occupied.
 
 ## Model Presets
+
+Presets are the most visible part of the router, but the router itself is doing more than simple preset lookup.
+It applies a priority chain of user override, orchestrator choice, preset, then default model, which keeps model
+selection predictable while still allowing the workflow to adapt at runtime.
 
 | Preset | Orchestrator | Reviewer 1 | Reviewer 2 | Reviewer 3 | Synthesizer |
 |--------|-------------|------------|------------|------------|-------------|
