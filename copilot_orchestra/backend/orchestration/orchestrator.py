@@ -22,7 +22,7 @@ from copilot.types import SessionConfig
 from pydantic import BaseModel, Field
 
 from backend.logging_config import get_logger
-from backend.orchestration.agents.reviewer import SYSTEM_PROMPT as REVIEWER_PROMPT
+from backend.orchestration.agents.reviewer import SYSTEM_PROMPTS as REVIEWER_PROMPTS
 from backend.orchestration.agents.reviewer import ReviewerAgent
 from backend.orchestration.agents.synthesizer import SYSTEM_PROMPT as SYNTH_PROMPT
 from backend.orchestration.agents.synthesizer import SynthesizerAgent
@@ -47,8 +47,10 @@ You operate in a strictly read-only, sandboxed mode.
 
 ---
 
-You are a code review orchestrator. Your job is to analyse a codebase
-and create a focused review plan for three independent reviewer agents.
+You are a code review orchestrator at a FAANG-level engineering org.
+Your job is to analyse a codebase and create a focused review plan for three independent
+reviewer agents. You do this efficiently and without commentary — no "I'll now explore…",
+no "Would you like me to…". Explore, decide, call submit_plan. Done.
 
 You have access to list_directory, read_file, grep_codebase, git_diff, and git_diff_file tools.
 Use them to understand the project structure, then call submit_plan with your review plan.
@@ -57,7 +59,8 @@ All three reviewers must receive the SAME files and the SAME focus. They review 
 independently so their outputs can be directly compared. Do NOT split the codebase between them.
 
 Select the 5-15 most relevant files for the task. The focus field should describe what to look for,
-derived from the review task.
+derived from the review task. Be precise — "check auth middleware for token validation gaps and
+session fixation" beats "review authentication."
 
 LARGE REPO STRATEGY
 If list_directory returns a truncation notice or the repo appears large, switch to grep_codebase
@@ -69,7 +72,7 @@ to find relevant files by content instead of browsing every directory. Recommend
        grep_codebase(pattern="SELECT|INSERT|UPDATE", glob="*.py")
   3. Use git_diff_file for individual file diffs rather than git_diff when the repo is large.
   4. read_file only the files you intend to include in the plan.
-  5. Assign specialists no more than 15 files — quality over quantity.
+  5. Assign reviewers no more than 15 files — quality over quantity.
 """
 
 AUTO_MODEL_INSTRUCTIONS = """
@@ -84,6 +87,7 @@ Provide suggested_models as a JSON object with keys: reviewer_1, reviewer_2, rev
 
 
 # ── Plan schema ───────────────────────────────────────────────────────────────
+
 
 class AgentPlan(BaseModel):
     files: list[str] = Field(default_factory=list, description="File paths to review")
@@ -103,6 +107,7 @@ class ReviewPlan(BaseModel):
 
 # ── Review request ────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ReviewRequest:
     task: str
@@ -114,6 +119,7 @@ class ReviewRequest:
 
 
 # ── Main entry point ─────────────────────────────────────────────────────────
+
 
 async def run_review(
     review_id: str,
@@ -139,15 +145,17 @@ async def run_review(
         await event_bus.publish(review_id, {**event, "review_id": review_id})
 
     try:
-        await publish({
-            "type": "review.started",
-            "request": {
-                "task": request.task,
-                "codebase_path": request.codebase_path,
-                "scope": request.scope,
-                "model_preset": request.model_preset,
-            },
-        })
+        await publish(
+            {
+                "type": "review.started",
+                "request": {
+                    "task": request.task,
+                    "codebase_path": request.codebase_path,
+                    "scope": request.scope,
+                    "model_preset": request.model_preset,
+                },
+            }
+        )
 
         log.info("Review started", task=request.task[:100], scope=request.scope)
 
@@ -165,12 +173,14 @@ async def run_review(
                 try:
                     role = AgentRole(role_name)
                     model_router.set_orchestrator_choice(role, model)
-                    await publish({
-                        "type": "model.selected",
-                        "agent": role_name,
-                        "model": model,
-                        "reason": "orchestrator auto-selection",
-                    })
+                    await publish(
+                        {
+                            "type": "model.selected",
+                            "agent": role_name,
+                            "model": model,
+                            "reason": "orchestrator auto-selection",
+                        }
+                    )
                 except ValueError:
                     log.warning("Unknown role in suggested_models", role=role_name)
 
@@ -178,16 +188,31 @@ async def run_review(
         log.info("Starting parallel reviewer agents")
         results = await asyncio.gather(
             _run_reviewer(
-                AgentRole.REVIEWER_1, plan.reviewer_1, tools,
-                review_id, event_bus, session_manager, model_router,
+                AgentRole.REVIEWER_1,
+                plan.reviewer_1,
+                tools,
+                review_id,
+                event_bus,
+                session_manager,
+                model_router,
             ),
             _run_reviewer(
-                AgentRole.REVIEWER_2, plan.reviewer_2, tools,
-                review_id, event_bus, session_manager, model_router,
+                AgentRole.REVIEWER_2,
+                plan.reviewer_2,
+                tools,
+                review_id,
+                event_bus,
+                session_manager,
+                model_router,
             ),
             _run_reviewer(
-                AgentRole.REVIEWER_3, plan.reviewer_3, tools,
-                review_id, event_bus, session_manager, model_router,
+                AgentRole.REVIEWER_3,
+                plan.reviewer_3,
+                tools,
+                review_id,
+                event_bus,
+                session_manager,
+                model_router,
             ),
             return_exceptions=True,  # don't let one failure kill the others
         )
@@ -201,17 +226,22 @@ async def run_review(
         synthesis = await _run_synthesizer(
             [reviewer_1_result, reviewer_2_result, reviewer_3_result],
             request.task,
-            review_id, event_bus, session_manager, model_router,
+            review_id,
+            event_bus,
+            session_manager,
+            model_router,
         )
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
         log.info("Review complete", duration_ms=duration_ms)
 
-        await publish({
-            "type": "review.complete",
-            "synthesis": synthesis,
-            "duration_ms": duration_ms,
-        })
+        await publish(
+            {
+                "type": "review.complete",
+                "synthesis": synthesis,
+                "duration_ms": duration_ms,
+            }
+        )
 
         if review_store is not None:
             review_store.set_complete(review_id, synthesis, duration_ms)
@@ -229,6 +259,7 @@ async def run_review(
 
 
 # ── Orchestrator agent ────────────────────────────────────────────────────────
+
 
 async def _run_orchestrator(
     review_id: str,
@@ -251,7 +282,7 @@ async def _run_orchestrator(
         "output_tokens": 0,
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
-        "cost": 0.0,
+        "turns": 0,
     }
 
     async def submit_plan_handler(invocation: ToolInvocation) -> ToolResult:
@@ -294,39 +325,48 @@ async def _run_orchestrator(
         etype = event.type
 
         if etype == SessionEventType.ASSISTANT_MESSAGE_DELTA and event.data.delta_content:
-            await event_bus.publish(review_id, {
-                "type": "agent.stream",
-                "agent": "orchestrator",
-                "review_id": review_id,
-                "content": event.data.delta_content,
-            })
+            await event_bus.publish(
+                review_id,
+                {
+                    "type": "agent.stream",
+                    "agent": "orchestrator",
+                    "review_id": review_id,
+                    "content": event.data.delta_content,
+                },
+            )
 
         elif etype == SessionEventType.TOOL_EXECUTION_START:
-            await event_bus.publish(review_id, {
-                "type": "agent.tool_call",
-                "agent": "orchestrator",
-                "review_id": review_id,
-                "tool_name": event.data.tool_name or "unknown",
-                "tool_call_id": event.data.tool_call_id or "",
-                "args": event.data.arguments,
-            })
+            await event_bus.publish(
+                review_id,
+                {
+                    "type": "agent.tool_call",
+                    "agent": "orchestrator",
+                    "review_id": review_id,
+                    "tool_name": event.data.tool_name or "unknown",
+                    "tool_call_id": event.data.tool_call_id or "",
+                    "args": event.data.arguments,
+                },
+            )
 
         elif etype == SessionEventType.TOOL_EXECUTION_COMPLETE:
-            await event_bus.publish(review_id, {
-                "type": "agent.tool_result",
-                "agent": "orchestrator",
-                "review_id": review_id,
-                "tool_name": event.data.tool_name or "unknown",
-                "tool_call_id": event.data.tool_call_id or "",
-                "success": True,
-            })
+            await event_bus.publish(
+                review_id,
+                {
+                    "type": "agent.tool_result",
+                    "agent": "orchestrator",
+                    "review_id": review_id,
+                    "tool_name": event.data.tool_name or "unknown",
+                    "tool_call_id": event.data.tool_call_id or "",
+                    "success": True,
+                },
+            )
 
         elif etype == SessionEventType.ASSISTANT_USAGE:
             metrics["input_tokens"] += event.data.input_tokens or 0
             metrics["output_tokens"] += event.data.output_tokens or 0
             metrics["cache_read_tokens"] += event.data.cache_read_tokens or 0
             metrics["cache_write_tokens"] += event.data.cache_write_tokens or 0
-            metrics["cost"] += event.data.cost or 0.0
+            metrics["turns"] += 1
 
             quota: dict[str, Any] = {}
             if event.data.quota_snapshots:
@@ -339,14 +379,17 @@ async def _run_orchestrator(
                     }
                     break
 
-            await event_bus.publish(review_id, {
-                "type": "metrics.update",
-                "agent": "orchestrator",
-                "review_id": review_id,
-                "model": event.data.model or model,
-                **metrics,
-                "quota": quota,
-            })
+            await event_bus.publish(
+                review_id,
+                {
+                    "type": "metrics.update",
+                    "agent": "orchestrator",
+                    "review_id": review_id,
+                    "model": event.data.model or model,
+                    **metrics,
+                    "quota": quota,
+                },
+            )
 
     def on_event(event: Any) -> None:
         """SDK callback bridge: schedule async event processing safely."""
@@ -368,12 +411,15 @@ async def _run_orchestrator(
             f"Use list_directory to understand the project structure, then call submit_plan."
         )
 
-        await event_bus.publish(review_id, {
-            "type": "agent.started",
-            "agent": "orchestrator",
-            "review_id": review_id,
-            "model": model,
-        })
+        await event_bus.publish(
+            review_id,
+            {
+                "type": "agent.started",
+                "agent": "orchestrator",
+                "review_id": review_id,
+                "model": model,
+            },
+        )
 
         try:
             await session.send_and_wait({"prompt": prompt}, timeout=300.0)
@@ -389,12 +435,15 @@ async def _run_orchestrator(
 
         duration_ms = int((time.monotonic() - start_time) * 1000)
         log.info("Orchestrator done", duration_ms=duration_ms)
-        await event_bus.publish(review_id, {
-            "type": "agent.done",
-            "agent": "orchestrator",
-            "review_id": review_id,
-            "duration_ms": duration_ms,
-        })
+        await event_bus.publish(
+            review_id,
+            {
+                "type": "agent.done",
+                "agent": "orchestrator",
+                "review_id": review_id,
+                "duration_ms": duration_ms,
+            },
+        )
 
     finally:
         unsubscribe()
@@ -408,6 +457,7 @@ async def _run_orchestrator(
 
 
 # ── Reviewer runner ───────────────────────────────────────────────────────────
+
 
 async def _run_reviewer(
     role: AgentRole,
@@ -423,16 +473,19 @@ async def _run_reviewer(
     session_config: SessionConfig = {
         "model": model,
         "tools": tools,
-        "system_message": {"mode": "replace", "content": REVIEWER_PROMPT},
+        "system_message": {"mode": "replace", "content": REVIEWER_PROMPTS[role]},
         "streaming": True,
     }
 
     session = await session_manager.create_session(session_config)
-    agent = ReviewerAgent(role=role, session=session, event_bus=event_bus, review_id=review_id, model=model)
+    agent = ReviewerAgent(
+        role=role, session=session, event_bus=event_bus, review_id=review_id, model=model
+    )
     return await agent.run(plan.files, plan.focus)
 
 
 # ── Synthesizer runner ────────────────────────────────────────────────────────
+
 
 async def _run_synthesizer(
     reviews: list[str],
@@ -456,6 +509,7 @@ async def _run_synthesizer(
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _extract_result(result: Any, role: str) -> str:
     if isinstance(result, Exception):
