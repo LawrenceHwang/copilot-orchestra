@@ -1,43 +1,56 @@
 # Copilot Orchestra
 
-A multi-agent AI code review platform built on the [GitHub Copilot SDK](https://github.com/github/copilot-sdk).
-Five Copilot sessions run in parallel to deliver Architecture, Backend, and Frontend reviews
-simultaneously, with a Synthesizer that unifies all findings into one report.
+Copilot Orchestra is a proof of concept built on the [GitHub Copilot SDK](https://github.com/github/copilot-sdk).
+Its job is simple: take one coding task, fan it out to multiple Copilot-powered review roles,
+and stream the full workflow into a UI that is easy to inspect.
+
+This project is intentionally positioned as a learning and validation sandbox rather than a finished product.
+It exists to explore how a multi-agent Copilot SDK workflow behaves in practice, what the SDK makes easy,
+where orchestration needs more care, and how the experience feels when you expose the whole loop in real time.
+
+Five Copilot sessions run in parallel:
+
+- one Orchestrator to frame the task
+- three focused reviewers for Architecture, Backend, and Frontend perspectives
+- one Synthesizer to combine the findings into a final report
 
 ![example](./assets/example.png)
 
-Real-time streaming, live token/context/premium-request metrics (per-agent context window %,
-IN/OUT tokens, estimated cost via premium request pricing, and quota consumed), and a pluggable Model Router make this a showcase
-of what the SDK enables beyond the CLI.
+## Why This Exists
 
-Context-window telemetry is model-aware: the frontend resolves each agent's context limit from
-`GET /api/models` (`capabilities.limits.max_context_window_tokens`) and computes `CTX%` against
-that limit. If a model limit is unavailable, the UI falls back to 200K for display continuity.
-Usage rows are initialized when each agent starts, so all five agents always show a context row,
-including runs where a provider omits `assistant.usage` events.
-The UI renders this explicitly as `CTX <percent>% of <window>` (for example `CTX 8.0% of 128k`).
-Per-agent labels in the top metrics strip are deterministic and role-ordered:
+The main goal of this repository is to make Copilot SDK workflows concrete.
+Instead of treating the SDK as a black box, this PoC shows the moving parts clearly:
+
+- multi-session orchestration
+- role-based prompting
+- real-time event streaming over SSE
+- model selection through a pluggable router
+- token, context, and premium-request telemetry in the UI
+- tool-driven codebase access with path safety controls
+
+If you are evaluating whether the Copilot SDK can support more than a single chat loop,
+this repo is meant to be a practical reference.
+
+## What The App Shows
+
+The UI presents the workflow as a visible pipeline:
+
+- Orchestrator at the top
+- three reviewer panels in parallel
+- Synthesizer at the bottom
+
+Each panel streams its own output, can be expanded for easier reading, and reports usage metrics.
+The top metrics strip keeps labels deterministic and role-ordered:
 `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
-Reviewer labels in that strip mirror the same random `<action>-<animal>` names shown on the three reviewer cards,
-so the header and panels always match for faster scanning.
+Reviewer labels also mirror the same random `<action>-<animal>` names shown on the reviewer cards,
+so the header and panel names stay aligned.
 
-Recent UI accessibility tuning also raised contrast for secondary metadata text (timers, status chips,
-badge labels, and usage-row details) in both light and dark themes.
+Recent UI tuning also improved readability and accessibility for secondary metadata such as timers,
+status chips, badge labels, and usage details across both light and dark themes.
 
-The main content area arranges all five agents in a clear top-to-bottom pipeline:
-Orchestrator (full-width) → 3 Reviewer columns → Synthesizer (full-width).
-Every agent panel includes an expand icon (placed alongside Copy in the header action group)
-that expands it into a centered overlay for comfortable reading; clicking outside or the
-close icon returns it to inline size.
+## Architecture At A Glance
 
-> **Note on context window values:** `max_context_window_tokens` is the raw model limit from the
-> GitHub Copilot model catalog — it represents the full context window capacity of the model.
-> VS Code's "Context Usage" widget shows a *smaller* number (the effective token budget) because
-> VS Code internally subtracts a reserved output buffer (roughly 24%). Both values are accurate for
-> their purpose: the Orchestra uses the full catalog limit as the CTX% denominator, which is the
-> correct denominator for measuring how much of the model's window is occupied.
-
-```
+```text
 ┌─ Web UI (React + Vite) ───────────────────────────────────┐
 │  Task Input │ Model Router │ Metrics Bar                   │
 │  ┌────────────────────────────────────────────────────────┐│
@@ -49,7 +62,7 @@ close icon returns it to inline size.
 │  ┌────────────────────────────────────────────────────────┐│
 │  │                  Synthesis Report                     ││
 │  └────────────────────────────────────────────────────────┘│
-│  Each panel has a ⤢ maximize button for expanded viewing  │
+│  Each panel has a maximize button for expanded viewing    │
 └───────────────────────── SSE ─────────────────────────────┘
                            │
 ┌─ FastAPI ─────────────────────────────────────────────────┐
@@ -63,12 +76,18 @@ close icon returns it to inline size.
 └──────────────────── Copilot SDK ──────────────────────────┘
 ```
 
+The backend orchestration layer is UI-agnostic. FastAPI handles transport and API boundaries,
+while the orchestration core manages model selection, session lifecycle, event fan-out, and
+agent coordination.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
+
 ## Prerequisites
 
 - Python 3.13+ with [uv](https://docs.astral.sh/uv/)
 - Node.js 20+ with npm
-- GitHub Copilot CLI installed and authenticated (`copilot auth status`)
-- OR a BYOK API key (see [BYOK Configuration](#byok-configuration))
+- GitHub Copilot CLI installed and authenticated via `copilot auth status`
+- or a BYOK API key, described below
 
 ## Quick Start
 
@@ -78,49 +97,109 @@ uv sync
 
 # Configure environment
 cp .env.example .env
-# Edit .env as needed (defaults work if Copilot CLI is authenticated)
+# Edit .env if needed. Defaults work when Copilot CLI is already authenticated.
 
 # Start backend
 cd src
 uv run uvicorn backend.main:app --reload --port 8000
 
-# In another terminal (from repo root), start frontend
+# In another terminal, from the repo root, start frontend
 cd src/frontend
 npm install
 npm run dev
-# Open http://localhost:5173
 ```
+
+Then open `http://localhost:5173`.
 
 ## One-Command Launch Scripts
 
-Use the scripts in `scripts/` to start backend and frontend together.
+If you want the fastest path to a running demo, use the helper scripts in `scripts/`.
 
 ```bash
-# macOS / Linux
 ./scripts/start-app.sh
 ```
 
 ```powershell
-# Windows PowerShell
 .\scripts\start-app.ps1
 ```
 
-The scripts run from the repository root, start the backend on `:8000` and the frontend on `:5173`,
-and stop the backend automatically when you stop the frontend process.
+These scripts start the backend on `:8000` and the frontend on `:5173`, and shut down the backend
+when the frontend process stops.
 
 ## BYOK Configuration
 
-To use your own API key instead of GitHub Copilot auth, set these in `.env`:
+To run against your own provider instead of GitHub Copilot auth, set the following in `.env`:
 
 ```env
 BYOK_PROVIDER_TYPE=anthropic          # openai | anthropic | azure
 BYOK_API_KEY=sk-ant-...
-BYOK_BASE_URL=                        # optional; uses provider default
+BYOK_BASE_URL=                        # optional; provider default if empty
 ```
+
+## Telemetry And Metrics
+
+One purpose of this PoC is to make model behavior observable.
+The frontend reports, per agent:
+
+- context usage percentage
+- input and output token counts
+- premium-request usage
+- estimated cost in Copilot SDK mode
+
+Context-window telemetry is model-aware. The frontend reads each model limit from `GET /api/models`
+using `capabilities.limits.max_context_window_tokens` and computes `CTX%` against that value.
+If a model limit is unavailable, the UI falls back to `200k` to keep the display stable.
+
+Usage rows are initialized as soon as each agent starts, so all five agents always show a metrics row,
+including runs where a provider does not emit `assistant.usage` events.
+The display format is explicit: `CTX <percent>% of <window>`.
+
+> **Note on context window values:** `max_context_window_tokens` is the full raw model limit from the
+> GitHub Copilot model catalog. VS Code's Context Usage widget may show a smaller effective budget
+> because it reserves output capacity internally. Both numbers are valid for their specific purpose.
+> This project uses the full catalog limit as the denominator for CTX%, which is the correct basis for
+> measuring how much of the model's available context window is occupied.
+
+## Model Presets
+
+| Preset | Orchestrator | Reviewer 1 | Reviewer 2 | Reviewer 3 | Synthesizer |
+|--------|-------------|------------|------------|------------|-------------|
+| balanced | sonnet | sonnet | sonnet | sonnet | sonnet |
+| economy | haiku | haiku | haiku | haiku | haiku |
+| performance | opus | opus | opus | opus | opus |
+| free | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model |
+| auto | sonnet | *orch picks* | *orch picks* | *orch picks* | *orch picks* |
+
+The `balanced` preset currently uses `claude-sonnet-4-6` for all roles through the default model router setup.
+Per-role defaults can also be configured via environment variables such as `DEFAULT_ORCHESTRATOR_MODEL`
+and `DEFAULT_SECURITY_MODEL`, with those values passed into the `ModelRouter` as `default_models`.
+
+Individual roles can still be overridden in the UI regardless of the preset.
+
+The `free` preset:
+
+- uses SDK model discovery via `list_models`
+- selects only models where `billing.multiplier == 0.0`
+- fails fast when no free models are available for the current account
+
+## Cost Model
+
+In default Copilot SDK mode, cost is estimated from premium requests.
+Each model turn consumes its `billing.multiplier`, and the UI shows:
+
+`EST. COST = total_premium_requests × $0.04 USD`
+
+That matches GitHub Copilot's premium request pricing model.
+
+In BYOK mode, the UI does not attempt to show a dollar figure.
+Instead, it reports token totals and leaves final pricing to the provider's own token rates.
+
+The backend emits a `turns` counter from `ASSISTANT_USAGE` events, and the frontend combines that
+with each model's `billing_multiplier` from `GET /api/models` to derive premium-request usage.
 
 ## Project Structure
 
-```
+```text
 .
 ├── SPEC.md                     # Product specification
 ├── docs/
@@ -133,7 +212,7 @@ BYOK_BASE_URL=                        # optional; uses provider default
 │   │   ├── main.py                 # FastAPI entry point
 │   │   ├── config.py               # Settings via pydantic-settings
 │   │   ├── logging_config.py       # Structured logging setup
-│   │   ├── api/                    # HTTP layer (routes, schemas, dependencies)
+│   │   ├── api/                    # HTTP layer
 │   │   ├── orchestration/          # UI-agnostic orchestration core
 │   │   │   ├── model_router.py     # Model selection logic
 │   │   │   ├── event_bus.py        # asyncio fan-out event bus
@@ -141,86 +220,50 @@ BYOK_BASE_URL=                        # optional; uses provider default
 │   │   │   ├── orchestrator.py     # Top-level review flow
 │   │   │   └── agents/             # One module per agent role
 │   │   └── tools/
-│   │       └── codebase.py         # File-system tools (path-safe)
+│   │       └── codebase.py         # Path-safe file-system tools
 │   └── frontend/
 │       └── src/
-│           ├── components/         # AgentPanel, MetricsBar, etc.
+│           ├── components/         # AgentPanel, MetricsBar, and related UI
 │           └── hooks/useSSE.js     # EventSource hook
 └── tests/
-    ├── unit/                   # Fast, no CLI dependency
-    └── integration/            # Requires running CLI (skipped by default)
+    ├── unit/                       # Fast tests, no CLI dependency
+    └── integration/                # Requires authenticated Copilot CLI
 ```
 
 ## Running Tests
 
 ```bash
-# Unit tests only (fast, no CLI required)
+# Unit tests only
 uv run pytest tests/unit -v
 
-# All tests including integration (requires Copilot CLI)
+# Default suite excluding integration tests
 uv run pytest -v -m "not integration"
 
-# With coverage
+# Unit tests with coverage
 uv run pytest tests/unit --cov=src/backend --cov-report=term-missing
 ```
 
-## Model Presets
-
-| Preset | Orchestrator | Reviewer 1 | Reviewer 2 | Reviewer 3 | Synthesizer |
-|--------|-------------|------------|------------|------------|-------------|
-| balanced | sonnet | sonnet | sonnet | sonnet | sonnet |
-| economy | haiku | haiku | haiku | haiku | haiku |
-| performance | opus | opus | opus | opus | opus |
-| free | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model |
-| auto | sonnet | *orch picks* | *orch picks* | *orch picks* | *orch picks* |
-
-The `balanced` preset uses `claude-sonnet-4-6` for all roles (hardcoded defaults in
-`model_router.py`). Per-role balanced defaults can be configured via environment variables
-(`DEFAULT_ORCHESTRATOR_MODEL`, `DEFAULT_SECURITY_MODEL`, etc.) in `config.py`, but they
-require wiring into the `ModelRouter` constructor via `default_models`.
-
-Individual models can be overridden per-role in the UI regardless of preset.
-
-`free` preset behavior:
-
-- Uses SDK model discovery (`list_models`) to find models with `billing.multiplier == 0.0`
-- Selects only those 0x models (no hardcoded model IDs)
-- Fails fast if no free models are available for the current account
-
-## Cost Model
-
-**Copilot SDK mode** (default): Cost is estimated from premium requests. Each model turn
-consumes `billing.multiplier` premium requests (e.g. 1.0× for most models, 0.0× for free
-tier). The UI shows `EST. COST = total_premium_requests × $0.04 USD`. This matches
-GitHub Copilot's billing model where each premium request costs $0.04.
-
-**BYOK mode**: No dollar cost is displayed. The UI shows token counts (IN/OUT/TOTAL) and a
-note: *"Cost: see vendor pricing for token usage"*. Users can calculate cost by applying
-their vendor's per-token rates to the reported token counts.
-
-The backend emits a `turns` counter (incremented per `ASSISTANT_USAGE` SDK event) instead
-of a dollar cost. The frontend resolves each model's `billing_multiplier` from
-`GET /api/models` and computes `premium_requests = turns × billing_multiplier` per agent.
-
-## Architecture
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for full system design.
-
 ## Security
 
-- File access is restricted to explicitly registered root paths only
-- Path traversal is blocked via `Path.resolve()` + relative-to validation
-- No credentials are logged
-- BYOK keys are read from environment only, never from request bodies
-- See [Security Rule 0](SPEC.md#non-functional) in the spec
+- file access is limited to explicitly registered root paths
+- path traversal is blocked through `Path.resolve()` plus relative-path validation
+- credentials are never logged
+- BYOK keys are read from environment variables only, never request bodies
+- the spec defines the baseline security rule set in [SPEC.md](SPEC.md#non-functional)
 
 ## Tool Path Compatibility
 
-To improve reliability across different model families, codebase tools accept both:
+To make tool calls more reliable across different model families, the codebase tools accept both:
 
-- Absolute paths (for example `/Users/me/repo/src/app.py`)
-- Review-root-relative paths (for example `src/app.py`)
+- absolute paths such as `/Users/me/repo/src/app.py`
+- review-root-relative paths such as `src/app.py`
 
-Additionally, path-bearing tools like `list_directory` and `git_diff` default to the
-review root when `path` is omitted. This reduces tool invocation errors from models
-that provide partial arguments while preserving the same path-safety guarantees.
+Path-bearing tools like `list_directory` and `git_diff` also default to the review root when `path`
+is omitted. That helps reduce partial-argument failures while preserving the same path-safety model.
+
+## Related Docs
+
+- [SPEC.md](SPEC.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/API_SPEC.yaml](docs/API_SPEC.yaml)
+- [docs/EVENT_SCHEMA.md](docs/EVENT_SCHEMA.md)
