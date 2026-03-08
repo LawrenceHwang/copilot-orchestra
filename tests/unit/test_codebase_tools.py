@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from copilot.types import ToolInvocation, ToolResult
 
 from backend.tools.codebase import (
     MAX_DIRECTORY_FILES,
@@ -35,10 +36,19 @@ def registry(tmp_codebase: Path) -> CodebaseToolRegistry:
     return CodebaseToolRegistry(allowed_root=tmp_codebase)
 
 
+def assert_tool_result(
+    result: ToolResult, *, result_type: str, text_contains: str | None = None
+) -> None:
+    assert isinstance(result, ToolResult)
+    assert result.result_type == result_type
+    if text_contains is not None:
+        assert text_contains in result.text_result_for_llm
+
+
 class TestPathValidation:
     def test_path_within_root_is_allowed(self, registry, tmp_codebase):
-        path = registry.resolve_safe(str(tmp_codebase / "src" / "auth.py"))
-        assert path == (tmp_codebase / "src" / "auth.py").resolve()
+        path = registry.resolve_safe(str(tmp_codebase / "src" / "backend" / "auth.py"))
+        assert path == (tmp_codebase / "src" / "backend" / "auth.py").resolve()
 
     def test_path_outside_root_raises(self, registry):
         with pytest.raises(PathNotAllowedError):
@@ -63,8 +73,8 @@ class TestPathValidation:
         assert path == tmp_codebase.resolve()
 
     def test_root_relative_path_is_allowed(self, registry, tmp_codebase):
-        path = registry.resolve_safe("src/auth.py")
-        assert path == (tmp_codebase / "src" / "auth.py").resolve()
+        path = registry.resolve_safe("src/backend/auth.py")
+        assert path == (tmp_codebase / "src" / "backend" / "auth.py").resolve()
 
     def test_dot_path_resolves_to_root(self, registry, tmp_codebase):
         path = registry.resolve_safe(".")
@@ -167,65 +177,55 @@ class TestBuildCodebaseTools:
             assert tool.parameters is not None, f"Tool {tool.name} has no schema"
 
     async def test_read_file_tool_handler_works(self, tmp_codebase):
-        from copilot.types import ToolInvocation
-
         tools = build_codebase_tools(str(tmp_codebase))
         read_tool = next(t for t in tools if t.name == "read_file")
-        invocation: ToolInvocation = {
-            "session_id": "test",
-            "tool_call_id": "tc-1",
-            "tool_name": "read_file",
-            "arguments": {"path": str(tmp_codebase / "README.md")},
-        }
+        invocation = ToolInvocation(
+            session_id="test",
+            tool_call_id="tc-1",
+            tool_name="read_file",
+            arguments={"path": str(tmp_codebase / "README.md")},
+        )
         result = await read_tool.handler(invocation)
-        assert result["resultType"] == "success"
-        assert "Test Repo" in result["textResultForLlm"]
+        assert_tool_result(result, result_type="success", text_contains="Test Repo")
 
     async def test_read_file_tool_blocks_traversal(self, tmp_codebase):
-        from copilot.types import ToolInvocation
-
         tools = build_codebase_tools(str(tmp_codebase))
         read_tool = next(t for t in tools if t.name == "read_file")
-        invocation: ToolInvocation = {
-            "session_id": "test",
-            "tool_call_id": "tc-2",
-            "tool_name": "read_file",
-            "arguments": {"path": "/etc/passwd"},
-        }
+        invocation = ToolInvocation(
+            session_id="test",
+            tool_call_id="tc-2",
+            tool_name="read_file",
+            arguments={"path": "/etc/passwd"},
+        )
         result = await read_tool.handler(invocation)
         # define_tool wraps errors as failure results, not exceptions
-        assert result["resultType"] == "failure"
+        assert_tool_result(result, result_type="failure")
 
     async def test_list_directory_tool_defaults_to_root_path(self, tmp_codebase):
-        from copilot.types import ToolInvocation
-
         tools = build_codebase_tools(str(tmp_codebase))
         list_tool = next(t for t in tools if t.name == "list_directory")
-        invocation: ToolInvocation = {
-            "session_id": "test",
-            "tool_call_id": "tc-3",
-            "tool_name": "list_directory",
-            "arguments": {},
-        }
+        invocation = ToolInvocation(
+            session_id="test",
+            tool_call_id="tc-3",
+            tool_name="list_directory",
+            arguments={},
+        )
         result = await list_tool.handler(invocation)
-        assert result["resultType"] == "success"
-        assert "README.md" in result["textResultForLlm"]
+        assert_tool_result(result, result_type="success", text_contains="README.md")
 
     async def test_git_diff_tool_defaults_to_root_path(self, tmp_codebase):
-        from copilot.types import ToolInvocation
-
         tools = build_codebase_tools(str(tmp_codebase))
         diff_tool = next(t for t in tools if t.name == "git_diff")
-        invocation: ToolInvocation = {
-            "session_id": "test",
-            "tool_call_id": "tc-4",
-            "tool_name": "git_diff",
-            "arguments": {},
-        }
+        invocation = ToolInvocation(
+            session_id="test",
+            tool_call_id="tc-4",
+            tool_name="git_diff",
+            arguments={},
+        )
         result = await diff_tool.handler(invocation)
         # In a non-git temp dir this should still be a successful invocation
         # returning either empty output or an explicit git availability message.
-        assert result["resultType"] == "success"
+        assert_tool_result(result, result_type="success")
 
 
 # ── Large-repo: skip dirs and file cap (non-git fallback) ────────────────────
@@ -279,7 +279,7 @@ class TestListDirectoryLargeRepo:
 
 class TestListDirectoryGitAware:
     def test_uses_git_paths_when_available(self, registry, tmp_codebase):
-        fake_paths = ["src/auth.py", "src/main.py", "README.md"]
+        fake_paths = ["src/backend/auth.py", "src/backend/main.py", "README.md"]
         with patch("backend.tools.codebase._git_ls_files", return_value=fake_paths):
             result = registry.list_directory(str(tmp_codebase))
         assert "auth.py" in result
@@ -292,13 +292,13 @@ class TestListDirectoryGitAware:
         assert "README.md" in result
 
     def test_git_paths_respect_max_depth(self, registry, tmp_codebase):
-        # depth=2 means paths with at most 2 components (1 dir level)
-        fake_paths = ["README.md", "src/auth.py", "src/utils/helpers/deep.py"]
+        # depth=3 means paths with at most 3 components (2 dir levels)
+        fake_paths = ["README.md", "src/backend/auth.py", "src/backend/utils/helpers/deep.py"]
         with patch("backend.tools.codebase._git_ls_files", return_value=fake_paths):
-            result = registry.list_directory(str(tmp_codebase), max_depth=2)
+            result = registry.list_directory(str(tmp_codebase), max_depth=3)
         assert "auth.py" in result
         assert "README.md" in result
-        assert "deep.py" not in result  # too deep for max_depth=2
+        assert "deep.py" not in result  # too deep for max_depth=3
 
     def test_git_paths_truncation_notice(self, registry, tmp_codebase):
         # Provide more paths than MAX_DIRECTORY_FILES
@@ -309,7 +309,7 @@ class TestListDirectoryGitAware:
         assert "not shown" in result
 
     def test_build_tree_from_git_paths_dirs_before_files(self):
-        paths = ["README.md", "src/auth.py", "src/main.py", "tests/test_auth.py"]
+        paths = ["README.md", "src/backend/auth.py", "src/backend/main.py", "tests/test_auth.py"]
         lines, remaining = _build_tree_from_git_paths(paths, max_depth=3, max_files=100)
         tree = "\n".join(lines)
         # directories should appear before files at the same level
@@ -389,14 +389,14 @@ class TestGrepCodebase:
         assert "truncated" in result
 
     def test_uses_rg_when_available(self, registry, tmp_codebase):
-        mock_output = "src/auth.py:10: secret = 'x'\n"
+        mock_output = "src/backend/auth.py:10: secret = 'x'\n"
         with patch.object(registry, "_grep_with_rg", return_value=mock_output) as mock_rg:
             result = registry.grep_codebase("secret")
         mock_rg.assert_called_once()
         assert result == mock_output
 
     def test_falls_back_to_git_grep_when_rg_unavailable(self, registry, tmp_codebase):
-        mock_output = "src/auth.py:10: secret = 'x'\n"
+        mock_output = "src/backend/auth.py:10: secret = 'x'\n"
         with (
             patch.object(registry, "_grep_with_rg", return_value=None),
             patch.object(registry, "_grep_with_git", return_value=mock_output) as mock_git,

@@ -20,12 +20,11 @@ def tmp_codebase(tmp_path: Path) -> Path:
     codebase = tmp_path / "codebase"
     codebase.mkdir()
     (codebase / "src").mkdir()
-    (codebase / "src" / "auth.py").write_text(
+    (codebase / "src" / "backend").mkdir()
+    (codebase / "src" / "backend" / "auth.py").write_text(
         "import os\ndef login(password): return os.system(f'echo {password}')\n"
     )
-    (codebase / "src" / "main.py").write_text(
-        "def add(a, b): return a + b\n" * 50
-    )
+    (codebase / "src" / "backend" / "main.py").write_text("def add(a, b): return a + b\n" * 50)
     (codebase / "README.md").write_text("# Test Repo\n")
     (codebase / "requirements.txt").write_text("requests==2.28.0\n")
     return codebase
