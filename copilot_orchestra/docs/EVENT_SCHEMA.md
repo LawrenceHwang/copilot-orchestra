@@ -161,6 +161,9 @@ An agent encountered an error. The pipeline continues with remaining agents.
 The orchestrator selected a model for a reviewer (auto mode only). Emitted after the
 orchestrator's `submit_plan` tool call, before the reviewers start.
 
+Note: in `free` preset mode, model selection is constrained to SDK-discovered
+0x models (`billing.multiplier == 0.0`) before any agent session starts.
+
 ```json
 {
   "type": "model.selected",
@@ -176,6 +179,24 @@ orchestrator's `submit_plan` tool call, before the reviewers start.
 
 Token and usage metrics update, emitted after each `assistant.usage` SDK event.
 
+`metrics.update` includes token usage and a turn counter, but not a guaranteed context-window
+limit field. Cost is computed on the frontend: in Copilot SDK mode as
+`turns × billing.multiplier × $0.04` (premium request pricing); in BYOK mode no dollar cost
+is shown — users should apply their vendor’s per-token pricing to the reported token counts.
+Clients that render CTX% should resolve model limits from `GET /api/models`
+(`capabilities.limits.max_context_window_tokens`) using the `model` id in the event.
+
+> **Context window denominator:** `max_context_window_tokens` from `/api/models` is the raw
+> model limit from the GitHub Copilot catalog (the full window capacity, e.g. 200K for
+> claude-sonnet-4.6, 128K for gpt-4.1). This differs from VS Code's "Context Usage" display,
+> which shows an *effective budget* after subtracting a reserved output buffer (~24%). Use the
+> catalog value as the CTX% denominator — it is the correct measure of window utilisation.
+>
+> **Dispatch note:** When consuming `metrics.update` events and dispatching to a
+> `useReducer`-style store, always map SSE fields explicitly. Do not spread `...event` onto the
+> action object — the SSE `type` field (`"metrics.update"`) would overwrite the action's
+> reducer type (e.g. `"METRICS_UPDATE"`), silently dropping the update.
+
 ```json
 {
   "type": "metrics.update",
@@ -186,7 +207,7 @@ Token and usage metrics update, emitted after each `assistant.usage` SDK event.
   "output_tokens": 890,
   "cache_read_tokens": 1200,
   "cache_write_tokens": 300,
-  "cost": 0.0042,
+  "turns": 3,
   "model": "claude-opus-4-6",
   "quota": {
     "used_requests": 12,
@@ -211,7 +232,7 @@ All agents have finished and the synthesizer has produced its report.
 }
 ```
 
-Note: aggregate token/cost totals are not included in this event. Clients should
+Note: aggregate token/turns totals are not included in this event. Clients should
 accumulate `metrics.update` events per agent to compute totals.
 
 ### `review.error`

@@ -5,15 +5,49 @@ Five Copilot sessions run in parallel to deliver Security, Performance, and Read
 simultaneously, with a Synthesizer that unifies all findings into one report.
 
 Real-time streaming, live token/context/premium-request metrics (per-agent context window %,
-IN/OUT tokens, cost, and quota consumed), and a pluggable Model Router make this a showcase
+IN/OUT tokens, estimated cost via premium request pricing, and quota consumed), and a pluggable Model Router make this a showcase
 of what the SDK enables beyond the CLI.
+
+Context-window telemetry is model-aware: the frontend resolves each agent's context limit from
+`GET /api/models` (`capabilities.limits.max_context_window_tokens`) and computes `CTX%` against
+that limit. If a model limit is unavailable, the UI falls back to 200K for display continuity.
+Usage rows are initialized when each agent starts, so all five agents always show a context row,
+including runs where a provider omits `assistant.usage` events.
+The UI renders this explicitly as `CTX <percent>% of <window>` (for example `CTX 8.0% of 128k`).
+Per-agent labels in the top metrics strip are deterministic and role-ordered:
+`orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
+Reviewer labels in that strip mirror the same random `<action>-<animal>` names shown on the three reviewer cards,
+so the header and panels always match for faster scanning.
+
+Recent UI accessibility tuning also raised contrast for secondary metadata text (timers, status chips,
+badge labels, and usage-row details) in both light and dark themes.
+
+The main content area arranges all five agents in a clear top-to-bottom pipeline:
+Orchestrator (full-width) → 3 Reviewer columns → Synthesizer (full-width).
+Every agent panel includes an expand icon (placed alongside Copy in the header action group)
+that expands it into a centered overlay for comfortable reading; clicking outside or the
+close icon returns it to inline size.
+
+> **Note on context window values:** `max_context_window_tokens` is the raw model limit from the
+> GitHub Copilot model catalog — it represents the full context window capacity of the model.
+> VS Code's "Context Usage" widget shows a *smaller* number (the effective token budget) because
+> VS Code internally subtracts a reserved output buffer (roughly 24%). Both values are accurate for
+> their purpose: the Orchestra uses the full catalog limit as the CTX% denominator, which is the
+> correct denominator for measuring how much of the model's window is occupied.
 
 ```
 ┌─ Web UI (React + Vite) ───────────────────────────────────┐
 │  Task Input │ Model Router │ Metrics Bar                   │
-│  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌────────────┐  │
-│  │ Security │ │Performance│ │Readabilty│ │ Synthesis  │  │
-│  └──────────┘ └───────────┘ └──────────┘ └────────────┘  │
+│  ┌────────────────────────────────────────────────────────┐│
+│  │                   Orchestrator                        ││
+│  └────────────────────────────────────────────────────────┘│
+│  ┌──────────┐ ┌───────────┐ ┌──────────┐                  │
+│  │ Security │ │Performance│ │Readabilty│  ← 3 reviewers   │
+│  └──────────┘ └───────────┘ └──────────┘                  │
+│  ┌────────────────────────────────────────────────────────┐│
+│  │                  Synthesis Report                     ││
+│  └────────────────────────────────────────────────────────┘│
+│  Each panel has a ⤢ maximize button for expanded viewing  │
 └───────────────────────── SSE ─────────────────────────────┘
                            │
 ┌─ FastAPI ─────────────────────────────────────────────────┐
@@ -119,6 +153,7 @@ uv run pytest tests/unit --cov=backend --cov-report=term-missing
 | balanced | sonnet | sonnet | sonnet | sonnet | sonnet |
 | economy | haiku | haiku | haiku | haiku | haiku |
 | performance | opus | opus | opus | opus | opus |
+| free | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model | discovered 0x model |
 | auto | sonnet | *orch picks* | *orch picks* | *orch picks* | *orch picks* |
 
 The `balanced` preset uses `claude-sonnet-4-6` for all roles (hardcoded defaults in
@@ -127,6 +162,27 @@ The `balanced` preset uses `claude-sonnet-4-6` for all roles (hardcoded defaults
 require wiring into the `ModelRouter` constructor via `default_models`.
 
 Individual models can be overridden per-role in the UI regardless of preset.
+
+`free` preset behavior:
+
+- Uses SDK model discovery (`list_models`) to find models with `billing.multiplier == 0.0`
+- Selects only those 0x models (no hardcoded model IDs)
+- Fails fast if no free models are available for the current account
+
+## Cost Model
+
+**Copilot SDK mode** (default): Cost is estimated from premium requests. Each model turn
+consumes `billing.multiplier` premium requests (e.g. 1.0× for most models, 0.0× for free
+tier). The UI shows `EST. COST = total_premium_requests × $0.04 USD`. This matches
+GitHub Copilot's billing model where each premium request costs $0.04.
+
+**BYOK mode**: No dollar cost is displayed. The UI shows token counts (IN/OUT/TOTAL) and a
+note: *"Cost: see vendor pricing for token usage"*. Users can calculate cost by applying
+their vendor's per-token rates to the reported token counts.
+
+The backend emits a `turns` counter (incremented per `ASSISTANT_USAGE` SDK event) instead
+of a dollar cost. The frontend resolves each model's `billing_multiplier` from
+`GET /api/models` and computes `premium_requests = turns × billing_multiplier` per agent.
 
 ## Architecture
 

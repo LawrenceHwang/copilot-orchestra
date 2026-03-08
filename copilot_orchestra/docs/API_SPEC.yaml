@@ -175,12 +175,13 @@ components:
           example: ["src/auth", "src/api/routes.py"]
         model_preset:
           type: string
-          enum: [balanced, economy, performance, auto]
+            enum: [balanced, economy, performance, free, auto]
           default: balanced
           description: |
             balanced: claude-sonnet-4-6 for all roles (hardcoded default)
             economy: claude-haiku-4-5-20251001 for all roles
             performance: claude-opus-4-6 for all roles
+             free: dynamically discovered 0x models only (billing.multiplier == 0.0)
             auto: orchestrator selects per-reviewer model via suggested_models in ReviewPlan
         model_overrides:
           $ref: "#/components/schemas/ModelOverrides"
@@ -239,6 +240,10 @@ components:
           type: object
         policy:
           type: object
+          billing_multiplier:
+            type: number
+            nullable: true
+            description: SDK-reported billing multiplier for the model (0.0 means free/0x)
 
     ReviewStatusResponse:
       type: object
@@ -260,7 +265,7 @@ components:
           enum: [full, custom]
         model_preset:
           type: string
-          enum: [balanced, economy, performance, auto]
+          enum: [balanced, economy, performance, free, auto]
         started_at:
           type: integer
           description: Unix timestamp in milliseconds

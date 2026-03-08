@@ -25,8 +25,8 @@ from backend.tools.codebase import (
     DirectoryTooDeepError,
     FileTooLargeError,
     PathNotAllowedError,
-    build_codebase_tools,
     _build_tree_from_git_paths,
+    build_codebase_tools,
 )
 
 
@@ -148,7 +148,13 @@ class TestBuildCodebaseTools:
     def test_tool_names_are_correct(self, tmp_codebase):
         tools = build_codebase_tools(str(tmp_codebase))
         names = {t.name for t in tools}
-        assert names == {"read_file", "list_directory", "grep_codebase", "git_diff", "git_diff_file"}
+        assert names == {
+            "read_file",
+            "list_directory",
+            "grep_codebase",
+            "git_diff",
+            "git_diff_file",
+        }
 
     def test_tools_have_descriptions(self, tmp_codebase):
         tools = build_codebase_tools(str(tmp_codebase))
@@ -224,6 +230,7 @@ class TestBuildCodebaseTools:
 
 # ── Large-repo: skip dirs and file cap (non-git fallback) ────────────────────
 
+
 class TestListDirectoryLargeRepo:
     def test_skips_node_modules(self, registry, tmp_codebase):
         node_modules = tmp_codebase / "node_modules"
@@ -268,6 +275,7 @@ class TestListDirectoryLargeRepo:
 
 
 # ── Large-repo: git-aware listing ────────────────────────────────────────────
+
 
 class TestListDirectoryGitAware:
     def test_uses_git_paths_when_available(self, registry, tmp_codebase):
@@ -316,27 +324,34 @@ class TestListDirectoryGitAware:
 
 # ── grep_codebase ─────────────────────────────────────────────────────────────
 
+
 class TestGrepCodebase:
     def test_finds_pattern_in_file(self, registry, tmp_codebase):
         (tmp_codebase / "secret.py").write_text("password = 'hunter2'\n")
         # Force Python fallback so test doesn't depend on rg/git
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("password")
         assert "secret.py" in result
         assert "hunter2" in result
 
     def test_returns_no_matches_when_nothing_found(self, registry, tmp_codebase):
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("ZZZNOTPRESENTZZZ")
         assert result == "[no matches found]"
 
     def test_glob_filter_limits_to_file_type(self, registry, tmp_codebase):
         (tmp_codebase / "match.py").write_text("TARGET = 1\n")
         (tmp_codebase / "match.js").write_text("TARGET = 1\n")
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("TARGET", glob="*.py")
         assert "match.py" in result
         assert "match.js" not in result
@@ -345,14 +360,18 @@ class TestGrepCodebase:
         # Write a file with many matching lines
         content = "\n".join(f"MARKER line {i}" for i in range(100))
         (tmp_codebase / "big.py").write_text(content)
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("MARKER", max_results=5)
         assert result.count("MARKER") <= 5
 
     def test_invalid_regex_returns_error_message(self, registry):
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("[unclosed")
         assert "invalid regex" in result
 
@@ -361,8 +380,10 @@ class TestGrepCodebase:
         line = "A" * 200 + "\n"
         content = line * (MAX_GREP_OUTPUT_BYTES // len(line) + 10)
         (tmp_codebase / "huge.py").write_text(content)
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("A" * 200, max_results=200)
         assert len(result) <= MAX_GREP_OUTPUT_BYTES + len("\n[...truncated]")
         assert "truncated" in result
@@ -376,8 +397,10 @@ class TestGrepCodebase:
 
     def test_falls_back_to_git_grep_when_rg_unavailable(self, registry, tmp_codebase):
         mock_output = "src/auth.py:10: secret = 'x'\n"
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=mock_output) as mock_git:
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=mock_output) as mock_git,
+        ):
             result = registry.grep_codebase("secret")
         mock_git.assert_called_once()
         assert result == mock_output
@@ -386,22 +409,34 @@ class TestGrepCodebase:
         nm = tmp_codebase / "node_modules" / "dep"
         nm.mkdir(parents=True)
         (nm / "index.js").write_text("MARKER = 1")
-        with patch.object(registry, "_grep_with_rg", return_value=None), \
-             patch.object(registry, "_grep_with_git", return_value=None):
+        with (
+            patch.object(registry, "_grep_with_rg", return_value=None),
+            patch.object(registry, "_grep_with_git", return_value=None),
+        ):
             result = registry.grep_codebase("MARKER")
         assert "node_modules" not in result
 
 
 # ── git_diff_file ─────────────────────────────────────────────────────────────
 
+
 class TestGitDiffFile:
     def _make_git_repo(self, path: Path) -> None:
         """Initialise a minimal git repo in path with one commit."""
         subprocess.run(["git", "init"], cwd=str(path), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=str(path), capture_output=True, check=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=str(path),
+            capture_output=True,
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"], cwd=str(path), capture_output=True, check=True
+        )
         subprocess.run(["git", "add", "."], cwd=str(path), capture_output=True, check=True)
-        subprocess.run(["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "init"], cwd=str(path), capture_output=True, check=True
+        )
 
     def test_returns_diff_for_modified_file(self, registry, tmp_codebase):
         self._make_git_repo(tmp_codebase)

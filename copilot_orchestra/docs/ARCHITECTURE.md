@@ -25,9 +25,9 @@ Orchestration Core  (pure Python, no FastAPI dependency)
     └── Orchestrator             — runs the full review pipeline
          │
          ├── OrchestratorAgent         — reads codebase, submits ReviewPlan
-         ├── ReviewerAgent (reviewer_1) ──┐
-         ├── ReviewerAgent (reviewer_2) ──┤  run in parallel; identical assignment
-         ├── ReviewerAgent (reviewer_3) ──┘
+         ├── ReviewerAgent (reviewer_1: Architecture) ──┐
+         ├── ReviewerAgent (reviewer_2: Backend)       ──┤  run in parallel; identical file assignment
+         ├── ReviewerAgent (reviewer_3: Frontend)      ──┘
          └── SynthesizerAgent          — consumes all three review texts
     │
     ▼
@@ -45,6 +45,10 @@ User Override  >  Orchestrator Choice  >  Config Preset  >  Hardcoded Default
 ```
 
 - Presets: `balanced`, `economy`, `performance`, `auto`
+- Presets: `balanced`, `economy`, `performance`, `free`, `auto`
+- `free` preset is resolved dynamically from SDK model metadata: models with
+  `billing.multiplier == 0.0` and enabled policy state are eligible.
+  No model IDs are hardcoded.
 - In `auto` mode, the orchestrator includes a `suggested_models` dict in its `ReviewPlan`
   JSON (via the `submit_plan` tool). The pipeline then calls
   `router.set_orchestrator_choice(role, model)` for each suggestion. These choices are
@@ -81,6 +85,50 @@ Fan-out: multiple SSE connections can subscribe to the same `review_id`.
 All agent sessions share one `EventBus` instance (app singleton).
 A `{"type": "stream.end"}` sentinel closes the SSE stream.
 
+### Frontend Label Mapping And Order
+
+The frontend keeps reviewer identity stable per session using a generated display-name array:
+
+- `reviewer_1 -> reviewerNames[0]`
+- `reviewer_2 -> reviewerNames[1]`
+- `reviewer_3 -> reviewerNames[2]`
+
+This mapping is used consistently in both reviewer cards and the top metrics strip.
+Per-agent metrics are rendered in deterministic role order:
+
+`orchestrator -> reviewer_1 -> reviewer_2 -> reviewer_3 -> synthesizer`
+
+This prevents display drift from object insertion order and keeps header telemetry aligned
+with the left-to-right reviewer card layout.
+
+### Frontend Layout & Typography
+
+**Base font size:** `html { font-size: 112.5% }` in `index.css` scales all rem-based Tailwind
+values (text, spacing, padding) proportionally. The initial value was 125% (matching the
+preferred browser zoom level), but after review the UI felt slightly large; it was trimmed to
+112.5% (90% of 125%) for better information density while preserving proportional scaling.
+
+**Sidebar:** Default width 360px, drag range 260–560px (enforced in `App.jsx`). These values
+are set in raw pixels because the drag handler uses `clientX` pixel offsets. When changing
+the root font size, sidebar pixel dimensions must be recalibrated proportionally (288px at
+100% → 360px at 125% → 324px at 112.5%).
+
+**Inline label wrapping:** Short text labels inside flex rows (e.g. scope radio buttons) must
+use `whitespace-nowrap` to prevent multi-word labels like "Full repo" from breaking across
+lines at larger font sizes.
+
+**Contrast:** Operational metadata (timers, status text, usage labels, and badge text) uses
+contrast-safe tokens in both themes. Dark mode must avoid low-contrast `gray-500` style
+combinations on dark surfaces for primary runtime signals.
+
+**Orchestrator panel minimum height:** The orchestrator rarely produces `streamText` — it
+coordinates through tool calls and `submit_plan`, not free-form output. Without a minimum height
+its `flex-1 min-h-0` content area collapses to near-zero, leaving only the header and tool
+badges visible. All `AgentPanel` instances carry `min-h-[140px]` on their outer div (applied
+when not in expanded/overlay mode). This is small enough to be unnoticeable on reviewer and
+synthesis panels (which are tall due to content) while keeping the orchestrator visually
+proportionate in the pipeline layout.
+
 ### SessionManager
 
 Owns one `CopilotClient` per application lifetime (started in FastAPI `lifespan`).
@@ -115,10 +163,23 @@ Unrecoverable pipeline errors are published as `review.error`.
 
 ### Agents
 
-**Reviewer agents** (`ReviewerAgent`) each wrap a `CopilotSession`. All three reviewers use
-an identical multi-dimensional system prompt covering Security, Correctness, Maintainability,
-Readability, and Performance. They receive the same files and focus from the orchestrator so
-their outputs can be directly compared by the synthesizer.
+**Reviewer agents** (`ReviewerAgent`) each wrap a `CopilotSession`. All three share a common
+engineering baseline (15+ years industry experience, long-term thinking, tradeoff judgement,
+no-hedging behavioral contract), but each receives a **distinct specialization** via its own
+system prompt from `SYSTEM_PROMPTS[role]` in `agents/reviewer.py`:
+
+| Role | Specialization | Key focus areas |
+| --- | --- | --- |
+| `reviewer_1` | Architecture | Service boundaries, coupling, API contracts, scalability ceilings, infrastructure implications, long-term tradeoffs |
+| `reviewer_2` | Backend Engineering | Databases, caching, APIs, reliability, security at service boundaries, observability, backend performance |
+| `reviewer_3` | Frontend & UX | Accessibility (WCAG), i18n/l10n, UX correctness, render performance, component architecture, visual correctness |
+
+All three receive the same files and focus from the orchestrator so the synthesizer can
+triangulate findings across three expert lenses.
+
+**Agent prompt behavioral contract (all agents):** No hedging. No "would you like me to…".
+No end-of-response offers or questions. Agents use the tools, form judgment, and write the
+output. This is enforced explicitly in every system prompt.
 
 **Orchestrator** is implemented inline in `orchestrator.py` (not a `BaseAgent` subclass)
 because it uses a custom `submit_plan` tool that captures the `ReviewPlan`.
@@ -145,7 +206,7 @@ session config so relative tool paths resolve correctly.
 
 All five agents publish identical event sets: `agent.started` (with `model`),
 `agent.stream` (text deltas), `agent.tool_call`, `agent.tool_result`, `metrics.update`
-(tokens + cost from `ASSISTANT_USAGE`), and `agent.done` (with `duration_ms`).
+(tokens + turns from `ASSISTANT_USAGE`), and `agent.done` (with `duration_ms`).
 
 #### Timeout / Watchdog
 
@@ -162,6 +223,18 @@ All five agents publish identical event sets: `agent.started` (with `model`),
 Any incoming SDK event (token, tool call, even `agent.thinking` from a reasoning model)
 resets the liveness clock. A `TimeoutError` is caught and published as `agent.error`;
 the pipeline continues with the remaining reviewers.
+
+**Critical:** Every `send_and_wait` call **must** pass an explicit `timeout` parameter:
+
+```python
+await self._session.send_and_wait({"prompt": prompt}, timeout=AGENT_TOTAL_TIMEOUT_S)
+```
+
+Omitting `timeout` causes the SDK to fall back to its internal default (60 seconds), which
+is far too short for the synthesizer (which processes three full reviews) and for deep-thinking
+reviewer agents. The `SynthesizerAgent` overrides `run()` and must pass `timeout=SYNTH_TOTAL_TIMEOUT_S`
+explicitly — it does not inherit the base class call. Always verify this whenever `run()` is
+overridden in a subclass.
 
 ### Codebase Tools
 
@@ -265,7 +338,7 @@ Key events:
 | `agent.done` | Agent finished | `agent`, `duration_ms` |
 | `agent.error` | Agent failed | `agent`, `error` |
 | `model.selected` | Auto mode selection | `agent`, `model`, `reason` |
-| `metrics.update` | Token/usage update | `agent`, `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost`, `quota` |
+| `metrics.update` | Token/usage update | `agent`, `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `turns`, `quota` |
 | `review.complete` | All done | `synthesis`, `duration_ms` |
 | `review.error` | Pipeline failed (unrecoverable) | `error` |
 | `stream.end` | SSE closes | — |
@@ -319,39 +392,99 @@ or Rich.
 
 ## Frontend: Usage Display
 
-Three layers of usage visibility in the browser UI:
+### Cost Model
+
+The cost estimation uses two distinct strategies depending on the connection mode:
+
+- **Copilot SDK mode**: Cost is derived from premium requests. The backend emits a `turns`
+  counter (incremented per `ASSISTANT_USAGE` SDK event). The frontend looks up each model's
+  `billing_multiplier` from `GET /api/models` and computes
+  `premium_requests = turns × billing_multiplier` per agent, then
+  `est_cost = total_premium_requests × $0.04 USD`.
+- **BYOK mode**: No dollar cost is shown. The UI displays token counts and a note directing
+  users to check their vendor's pricing for the reported token usage.
+
+The `byok_active` flag is provided by `GET /api/models` and stored as React state. It is
+passed to `MetricsBar` to toggle between the two display strategies.
+
+### Three layers of usage visibility in the browser UI
 
 ### MetricsBar (global)
 
 Sits between the header and main content. Shows aggregated totals across all five agents:
 
 - **IN / OUT / TOTAL** — cumulative token counts from all `metrics.update` events
-- **EST. COST** — aggregate cost (shown when > 0)
+- **EST. COST** — aggregate estimated cost computed as `premium_requests × $0.04` where each turn costs `billing.multiplier` premium requests (Copilot SDK mode only; hidden in BYOK mode). Shown when > 0.
 - **PREMIUM** — quota consumption: `used_requests / entitlement_requests (X% left)` with a
   colour-coded bar (green → amber → red as quota decreases). "∞ unlimited" shown for
   unlimited entitlements.
-- **Per-agent strip** — each agent's label with individual IN↑ OUT↓ tokens and cost.
+- **Per-agent strip** — each agent's label with individual IN↑ OUT↓ tokens and per-agent cost.
 
 ### AgentUsageRow (per-agent panel)
 
-Displayed below the tool-call badge row in each `AgentPanel` (including orchestrator in sidebar)
-and in `SynthesisPanel`. Only rendered when token data is non-zero (idle panels stay clean).
+Displayed below the tool-call badge row in each `AgentPanel` and in `SynthesisPanel`.
+The orchestrator is rendered as a full-width `AgentPanel` in the main content area
+(above the three reviewer columns), matching the same card design as all other agents.
+Usage rows are rendered for every started agent, even before non-zero token usage,
+so the operator always has a full per-agent telemetry strip.
 
-- **Context window %** — colour bar (`input_tokens / 200_000 * 100`). Sky below 50 %, amber 50-80 %, red above 80 %.
+### Panel Maximize / Expand
+
+Every agent panel (orchestrator, 3 reviewers, synthesizer) includes an expand button
+(SVG expand-arrows icon) co-located with the Copy button in header row 2. Clicking it
+renders the panel as a fixed overlay (`z-50`, `80vh`, `max-w-4xl`) with a semi-transparent
+backdrop. The expanded panel continues to receive and display streamed data. Clicking
+outside the panel or clicking the close icon (SVG ×) returns it to its original inline
+size. State is managed via a single `expandedPanel` string in `App.jsx` (one panel
+expanded at a time).
+
+- **Context window %** — colour bar (`input_tokens / context_window_tokens * 100`). Sky below
+  50 %, amber 50-80 %, red above 80 %.
+- **Context window label** — rendered as `CTX <percent>% of <window>` (for example
+  `CTX 8.0% of 128k`) so operators can verify what denominator is being used.
 - **IN** — `input_tokens` formatted (e.g. `12.3k`).
 - **OUT** — `output_tokens` formatted.
-- **Cost** — per-agent USD cost (shown when non-zero).
 
-Context window size is hardcoded to 200K tokens — the context limit for all current Claude models
-(Opus 4.6, Sonnet 4.6, Haiku 4.5). The constant `CONTEXT_WINDOW = 200_000` lives in
-`AgentPanel.jsx` and `SynthesisPanel.jsx`.
+`context_window_tokens` is resolved from the model catalog payload (`GET /api/models`,
+`capabilities.limits.max_context_window_tokens`) when an agent starts or when a metrics event
+includes a model id. If unavailable, the UI falls back to 200K to keep the display stable.
+
+**Context window value source:** `max_context_window_tokens` from `/api/models` is the raw
+model limit from the GitHub Copilot model catalog. This represents the full context window
+capacity of the model. Note that VS Code's "Context Usage" widget displays a *smaller* value
+(an internal effective budget after subtracting a reserved output buffer, approximately 24%).
+The Orchestra uses the full catalog limit as the CTX% denominator — this is the correct
+measure of actual window utilisation against the model's true capacity.
 
 ### State wiring
 
-`App.jsx` holds `metrics: { [agentRole]: { input_tokens, output_tokens, cost, quota } }` in
-the `useReducer` store, updated by `METRICS_UPDATE` actions from `metrics.update` SSE events.
-The metrics slice is passed down as the `metrics` prop to `AgentPanel` (for each reviewer role)
-and `SynthesisPanel`.
+`App.jsx` holds `metrics: { [agentRole]: { input_tokens, output_tokens, turns, quota, model,
+context_window_tokens } }` in the `useReducer` store.
+
+- On `agent.started`, the reducer seeds the metrics entry with zeroed token/turns values and a
+  model-derived `context_window_tokens`, ensuring visibility for all agents.
+- On `metrics.update`, token/turns/quota values are merged while preserving already-known context
+  limits if the event omits them.
+
+**Dispatch pattern (important):** The `handleEvent` callback in `App.jsx` maps SSE event fields
+to the reducer action with explicit named properties — it does **not** spread `...event` onto
+the dispatch object. Spreading the raw SSE event would overwrite the reducer's `type:
+"METRICS_UPDATE"` with the event's `type: "metrics.update"`, causing the reducer to fall
+through to `default: return state` and silently drop all token/turns/quota updates. Any future
+consumers of SSE events that dispatch to a reducer must apply the same explicit-mapping pattern.
+
+**Streaming vs. final-message deduplication:** The Copilot SDK fires both `ASSISTANT_MESSAGE_DELTA`
+(streaming chunks → `agent.stream`) and `ASSISTANT_MESSAGE` (complete text → `agent.message`)
+for the same turn. The frontend must not dispatch both to the same agent, or the full text will
+appear duplicated at the end of the stream. This is solved with `streamedAgentsRef` (a `useRef
+Set`) in `App.jsx`: the `agent.stream` handler registers the agent in the set; the `agent.message`
+handler only dispatches if the agent is absent from the set (i.e. no streaming events arrived —
+non-streaming model fallback). The ref is cleared on each new review start.
+
+**Stale-closure hazard:** `handleEvent` is `useCallback([models])`, so any `state` captured
+inside the closure reflects the initial render value, not the current state. Never use
+`state.agents[x].streamText` (or any other live state field) inside this callback — it will
+always read the initial empty string. Use refs for cross-event coordination instead.
 
 ## Technology Choices
 

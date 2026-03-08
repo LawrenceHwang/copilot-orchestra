@@ -5,6 +5,8 @@ Tests cover: default model resolution, preset modes, user overrides,
 orchestrator choices, and priority chain correctness.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from backend.orchestration.model_router import AgentRole, ModelPreset, ModelRouter
@@ -50,6 +52,52 @@ class TestModelRouterPresets:
         # Before orchestrator picks, should fall back to configured defaults
         model = router.get_model(AgentRole.REVIEWER_1)
         assert model  # not empty
+
+    def test_free_preset_uses_discovered_zero_multiplier_model(self):
+        models = [
+            SimpleNamespace(
+                id="paid-model",
+                billing=SimpleNamespace(multiplier=1.0),
+                policy=SimpleNamespace(state="enabled"),
+            ),
+            SimpleNamespace(
+                id="free-model",
+                billing=SimpleNamespace(multiplier=0.0),
+                policy=SimpleNamespace(state="enabled"),
+            ),
+        ]
+        router = ModelRouter(preset=ModelPreset.FREE, available_models=models)
+        for role in AgentRole:
+            assert router.get_model(role) == "free-model"
+
+    def test_free_preset_raises_when_no_zero_multiplier_model(self):
+        models = [
+            SimpleNamespace(
+                id="paid-model",
+                billing=SimpleNamespace(multiplier=1.0),
+                policy=SimpleNamespace(state="enabled"),
+            )
+        ]
+        router = ModelRouter(preset=ModelPreset.FREE, available_models=models)
+        with pytest.raises(RuntimeError, match=r"no free \(0x\) models"):
+            router.get_model(AgentRole.REVIEWER_1)
+
+    def test_free_discovery_ignores_disabled_models(self):
+        models = [
+            SimpleNamespace(
+                id="disabled-free",
+                billing=SimpleNamespace(multiplier=0.0),
+                policy=SimpleNamespace(state="disabled"),
+            ),
+            SimpleNamespace(
+                id="enabled-free",
+                billing=SimpleNamespace(multiplier=0.0),
+                policy=SimpleNamespace(state="enabled"),
+            ),
+        ]
+        router = ModelRouter(preset=ModelPreset.FREE, available_models=models)
+        assert router.has_free_models() is True
+        assert router.free_models() == ["enabled-free"]
 
 
 class TestModelRouterUserOverrides:

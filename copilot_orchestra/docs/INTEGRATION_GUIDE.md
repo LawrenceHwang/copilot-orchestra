@@ -52,6 +52,25 @@ EventSource(sse_url)
   └─ collect type == "review.complete" → read synthesis
 ```
 
+For dashboard-style telemetry, fetch `/api/models` once per session and map
+`model.id -> capabilities.limits.max_context_window_tokens`; combine that with
+`metrics.update.input_tokens` to compute per-agent context-window usage.
+Recommended presentation: `CTX <percent>% of <window>` so consumers can see both
+utilisation and the exact context denominator (for example `CTX 8.0% of 128k`).
+
+For multi-agent dashboards, keep role labels deterministic and layout-stable:
+
+- Preserve display order as `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`
+- If you assign friendly reviewer aliases, use one per-session role map and reuse it everywhere
+  (summary strip, reviewer panels, logs) to avoid identity drift
+- Keep telemetry text contrast high enough for rapid scanning under both dark and light themes
+
+> **Context window values:** `max_context_window_tokens` is the raw model limit from the
+> Copilot catalog (e.g. 200K for claude-sonnet-4.6, 128K for gpt-4.1, 264K for gpt-5-mini).
+> These are the full window capacities and the correct CTX% denominators. VS Code's
+> "Context Usage" widget shows a smaller *effective budget* (subtracting a ~24% output buffer)
+> — this is a VS Code-internal presentation choice, not a different model property.
+
 ---
 
 ## Pattern A — Polling Examples
@@ -254,6 +273,7 @@ curl -N -H "Accept: text/event-stream" \
 ### POST /api/reviews
 
 **Minimal request:**
+
 ```json
 {
   "task": "Review for security vulnerabilities",
@@ -267,9 +287,17 @@ For example, `read_file` can be called with either `/repo/src/app.py` or `src/ap
 Tools with a repository `path` parameter (`list_directory`, `git_diff`, `git_diff_file`)
 also default to the review root when omitted. This improves cross-model reliability
 without relaxing path-safety constraints.
+
+### FREE Preset Notes
+
+- `model_preset: "free"` restricts routing to models discovered from SDK metadata
+  where `billing.multiplier == 0.0`.
+- Discovery uses `list_models` metadata only (non-generative call).
+- If no free models are available for the current account, the API returns `400`.
 ```
 
 **Full request with all options:**
+
 ```json
 {
   "task": "Focus on authentication, session management, and SQL injection risks",
@@ -293,7 +321,7 @@ without relaxing path-safety constraints.
 | `codebase_path` | string (absolute path) | required | Local directory to review |
 | `scope` | `"full"` \| `"custom"` | `"full"` | `full` = entire codebase; `custom` = only `custom_paths` |
 | `custom_paths` | string[] | — | Required when `scope="custom"`. Relative paths within `codebase_path` |
-| `model_preset` | `"balanced"` \| `"economy"` \| `"performance"` \| `"auto"` | `"balanced"` | See model presets below |
+| `model_preset` | `"balanced"` \| `"economy"` \| `"performance"` \| `"free"` \| `"auto"` | `"balanced"` | See model presets below |
 | `model_overrides` | object | — | Override the model for specific agent roles |
 
 #### Model Presets
@@ -308,6 +336,7 @@ without relaxing path-safety constraints.
 #### Model Overrides (highest priority)
 
 Override any individual role, regardless of preset:
+
 ```json
 {
   "model_overrides": {
@@ -316,6 +345,7 @@ Override any individual role, regardless of preset:
   }
 }
 ```
+
 Roles: `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
 
 ---
@@ -323,6 +353,7 @@ Roles: `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
 ### GET /api/reviews/{review_id}
 
 **Response when running:**
+
 ```json
 {
   "review_id": "f47ac10b-...",
@@ -341,6 +372,7 @@ Roles: `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
 ```
 
 **Response when complete:**
+
 ```json
 {
   "review_id": "f47ac10b-...",
@@ -359,6 +391,7 @@ Roles: `orchestrator`, `reviewer_1`, `reviewer_2`, `reviewer_3`, `synthesizer`.
 ```
 
 **Response when errored:**
+
 ```json
 {
   "review_id": "f47ac10b-...",
