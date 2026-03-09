@@ -205,12 +205,11 @@ async def run_review(
 
         log.info("Review started", task=request.task[:100], scope=request.scope)
 
-        # Build tools locked to the codebase path
-        tools = build_codebase_tools(request.codebase_path)
-
-        # Step 1: Orchestrator determines the review plan
+        # Step 1: Orchestrator determines the review plan.
+        # Each agent gets its own tool instances with its own start_time so that
+        # elapsed-time annotations and file-read tracking are per-agent.
         plan = await _run_orchestrator(
-            review_id, request, tools, event_bus, session_manager, model_router, log
+            review_id, request, request.codebase_path, event_bus, session_manager, model_router, log
         )
 
         # Step 2: If auto mode, apply orchestrator model suggestions
@@ -230,13 +229,14 @@ async def run_review(
                 except ValueError:
                     log.warning("Unknown role in suggested_models", role=role_name)
 
-        # Step 3: Run three reviewers in parallel
+        # Step 3: Run three reviewers in parallel.
+        # Each reviewer gets its own tool instances (fresh start_time + tracking state).
         log.info("Starting parallel reviewer agents")
         results = await asyncio.gather(
             _run_reviewer(
                 AgentRole.REVIEWER_1,
                 plan.reviewer_1,
-                tools,
+                request.codebase_path,
                 review_id,
                 event_bus,
                 session_manager,
@@ -245,7 +245,7 @@ async def run_review(
             _run_reviewer(
                 AgentRole.REVIEWER_2,
                 plan.reviewer_2,
-                tools,
+                request.codebase_path,
                 review_id,
                 event_bus,
                 session_manager,
@@ -254,7 +254,7 @@ async def run_review(
             _run_reviewer(
                 AgentRole.REVIEWER_3,
                 plan.reviewer_3,
-                tools,
+                request.codebase_path,
                 review_id,
                 event_bus,
                 session_manager,
@@ -310,7 +310,7 @@ async def run_review(
 async def _run_orchestrator(
     review_id: str,
     request: ReviewRequest,
-    tools: list,
+    codebase_path: str,
     event_bus: EventBus,
     session_manager: SessionManager,
     model_router: ModelRouter,
@@ -322,6 +322,7 @@ async def _run_orchestrator(
 
     captured_plan: list[ReviewPlan] = []
     start_time = time.monotonic()
+    tools = build_codebase_tools(codebase_path, start_time=start_time)
     model = model_router.get_model(AgentRole.ORCHESTRATOR)
     metrics: dict[str, Any] = {
         "input_tokens": 0,
@@ -333,7 +334,7 @@ async def _run_orchestrator(
 
     async def submit_plan_handler(invocation: ToolInvocation) -> ToolResult:
         try:
-            plan = ReviewPlan.model_validate(invocation["arguments"])
+            plan = ReviewPlan.model_validate(invocation.arguments)
             captured_plan.append(plan)
             log.info(
                 "Orchestrator submitted plan",
@@ -341,9 +342,22 @@ async def _run_orchestrator(
                 reviewer_2_files=len(plan.reviewer_2.files),
                 reviewer_3_files=len(plan.reviewer_3.files),
             )
-            return {"textResultForLlm": "Plan accepted.", "resultType": "success"}
+            await event_bus.publish(
+                review_id,
+                {
+                    "type": "orchestrator.plan",
+                    "review_id": review_id,
+                    "plan": {
+                        "reviewer_1": {"files": plan.reviewer_1.files, "focus": plan.reviewer_1.focus},
+                        "reviewer_2": {"files": plan.reviewer_2.files, "focus": plan.reviewer_2.focus},
+                        "reviewer_3": {"files": plan.reviewer_3.files, "focus": plan.reviewer_3.focus},
+                        "rationale": plan.rationale,
+                    },
+                },
+            )
+            return ToolResult(text_result_for_llm="Plan accepted.", result_type="success")
         except Exception as exc:
-            return {"textResultForLlm": f"Invalid plan: {exc}", "resultType": "failure"}
+            return ToolResult(text_result_for_llm=f"Invalid plan: {exc}", result_type="failure")
 
     submit_plan_tool = Tool(
         name="submit_plan",
@@ -508,13 +522,15 @@ async def _run_orchestrator(
 async def _run_reviewer(
     role: AgentRole,
     plan: AgentPlan,
-    tools: list,
+    codebase_path: str,
     review_id: str,
     event_bus: EventBus,
     session_manager: SessionManager,
     model_router: ModelRouter,
 ) -> str:
     model = model_router.get_model(role)
+    # Fresh tool instances per reviewer: isolated start_time and file-read tracking.
+    tools = build_codebase_tools(codebase_path, start_time=time.monotonic())
 
     session_config: SessionConfig = {
         "model": model,

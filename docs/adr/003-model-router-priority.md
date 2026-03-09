@@ -33,3 +33,11 @@ Orchestrator choices are set at runtime via `router.set_orchestrator_choice(role
   (user intent > AI suggestion).
 - In non-auto presets, `set_orchestrator_choice` is never called, so orchestrator tool
   calls for model selection are not registered as available tools.
+
+## Model ID Format (operational note)
+
+Copilot SDK model IDs use dot notation for version numbers: `claude-sonnet-4.6`,
+`claude-haiku-4.5`, `claude-opus-4.6`. Hardcoded fallback constants (`_HARDCODED_DEFAULTS`,
+`_ECONOMY_MODEL`, `_PERFORMANCE_MODEL` in `model_router.py`) must use this exact format.
+Dash-style IDs (e.g. `claude-sonnet-4-6`) are not valid and will cause session creation
+failures. Always cross-check against `GET /api/models` when updating SDK versions.

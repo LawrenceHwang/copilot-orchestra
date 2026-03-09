@@ -89,6 +89,9 @@ request counts update live.
 | N16 | Agent prompt design targets FAANG principal/staff-engineer calibre: direct, opinionated, severity-calibrated, mentor-voiced. Each reviewer has a distinct vertical specialization (Architecture, Backend, Frontend) on top of a shared engineering baseline. |
 | N17 | Every `send_and_wait` call must pass an explicit `timeout` parameter. The SDK's internal default (60 s) is too short for the synthesizer and deep-thinking models; omitting it causes silent mid-stream truncation that looks like a streaming failure. |
 | N18 | The `handleEvent` SSE callback in `App.jsx` is `useCallback([models])` — `state` inside is always the initial value (stale closure). Cross-event coordination (e.g. detecting whether streaming already occurred for an agent) must use `useRef`, never stale `state` fields. |
+| N19 | Enterprise GitHub Copilot accounts may omit per-model capability and billing fields that the SDK treats as required. `sdk_compat.apply_enterprise_sdk_patches()` must be called once at startup (before the `CopilotClient` starts) to fill safe conservative defaults for any absent fields. Patches are narrowly scoped, idempotent, and never override fields that are present. |
+| N20 | Copilot SDK model IDs use dot notation for version numbers (e.g. `claude-sonnet-4.6`, `claude-haiku-4.5`, `claude-opus-4.6`). All hardcoded model ID constants in `model_router.py` and `config.py` must match this format exactly. When the SDK is updated, verify IDs against `GET /api/models` output. |
+| N21 | The per-role model override section in `ModelRouterPanel` is always rendered regardless of whether `GET /api/models` has returned data. When models have not loaded the selects are disabled and show `"— backend offline —"`. This ensures the override UI is always discoverable even during backend startup or transient API failures. |
 
 ## User Flows
 

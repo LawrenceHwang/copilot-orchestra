@@ -28,9 +28,23 @@ logger = get_logger("agent.base")
 # - LIVENESS: if no SDK event (token, tool call, etc.) arrives within this
 #   window the agent is considered stuck and cancelled early.
 # - POLL: how often the watchdog checks the liveness clock.
+# - SOFT/HARD ratios: when to inject phase-transition prompts.
 AGENT_TOTAL_TIMEOUT_S: float = 600.0  # 10-min hard ceiling
 AGENT_LIVENESS_TIMEOUT_S: float = 90.0  # 90 s idle → stuck
 WATCHDOG_POLL_S: float = 10.0
+AGENT_SOFT_WARN_RATIO: float = 0.70   # 70% elapsed → inject soft warning
+AGENT_HARD_WARN_RATIO: float = 0.90   # 90% elapsed → inject hard write trigger
+
+_SOFT_WARN_PROMPT = (
+    "You have used 70% of your time budget. "
+    "If you have not yet started writing your review, begin now using what you have read so far. "
+    "Stop reading new files unless you have a specific unanswered question that will change a finding."
+)
+_HARD_WARN_PROMPT = (
+    "You have used 90% of your time budget. "
+    "Stop all tool calls immediately and write your review right now based on what you have. "
+    "An incomplete review submitted on time is better than no review."
+)
 
 
 class BaseAgent:
@@ -66,11 +80,12 @@ class BaseAgent:
         """
         Run the agent: send the review prompt and return the final result text.
 
-        Uses a hybrid timeout: a hard ceiling (AGENT_TOTAL_TIMEOUT_S) combined
-        with a liveness watchdog (AGENT_LIVENESS_TIMEOUT_S) that fires if no
-        SDK event arrives for a sustained period, catching stuck agents early.
-
-        Events are published to the EventBus throughout execution.
+        Uses a multi-phase hybrid timeout:
+          - Phase 1 (0 – 70%): normal execution with liveness watchdog.
+          - Phase 2 (70 – 90%): soft warning injected; agent told to start writing.
+          - Phase 3 (90 – 100%): hard write trigger; agent told to write immediately.
+        A liveness watchdog runs across all phases and cancels early if the
+        session goes silent for AGENT_LIVENESS_TIMEOUT_S seconds.
         """
         start_time = time.monotonic()
         self._last_activity = start_time
@@ -80,65 +95,15 @@ class BaseAgent:
             {"type": "agent.started", "agent": self.role.value, "model": self._model}
         )
 
-        # Wire up the event handler
         unsubscribe = self._session.on(self._handle_sdk_event)
 
         try:
-            prompt = self._build_prompt(files, focus)
-
-            async def _run_session() -> Any:
-                # Pass the hard-ceiling timeout so the SDK doesn't abort during
-                # the silent reasoning phase of deep-thinking models (default is 60 s).
-                return await self._session.send_and_wait(
-                    {"prompt": prompt}, timeout=AGENT_TOTAL_TIMEOUT_S
-                )
-
-            async def _watchdog() -> str:
-                """Return 'liveness' or 'total' when a timeout condition fires."""
-                deadline = start_time + AGENT_TOTAL_TIMEOUT_S
-                while True:
-                    await asyncio.sleep(WATCHDOG_POLL_S)
-                    now = time.monotonic()
-                    if now >= deadline:
-                        return "total"
-                    if now - self._last_activity > AGENT_LIVENESS_TIMEOUT_S:
-                        return "liveness"
-
-            session_task = asyncio.create_task(_run_session())
-            watchdog_task = asyncio.create_task(_watchdog())
-
-            done, pending = await asyncio.wait(
-                [session_task, watchdog_task],
-                return_when=asyncio.FIRST_COMPLETED,
+            result = await self._run_with_phase_injection(
+                self._build_prompt(files, focus), start_time
             )
-            for t in pending:
-                t.cancel()
-                try:
-                    await t
-                except asyncio.CancelledError:
-                    pass
-
-            # If the session didn't finish, the watchdog fired.
-            if session_task not in done:
-                reason = watchdog_task.result()
-                elapsed = int(time.monotonic() - start_time)
-                idle = int(time.monotonic() - self._last_activity)
-                if reason == "liveness":
-                    raise asyncio.TimeoutError(
-                        f"No activity for {idle}s (elapsed {elapsed}s) — agent appears stuck"
-                    )
-                raise asyncio.TimeoutError(
-                    f"Exceeded hard timeout of {int(AGENT_TOTAL_TIMEOUT_S)}s"
-                )
-
-            event = session_task.result()
-            result = ""
-            if event and event.data.content:
-                result = event.data.content
 
             duration_ms = int((time.monotonic() - start_time) * 1000)
             self._log.info("Agent done", duration_ms=duration_ms, result_len=len(result))
-
             await self._publish(
                 {"type": "agent.done", "agent": self.role.value, "duration_ms": duration_ms}
             )
@@ -159,6 +124,125 @@ class BaseAgent:
         finally:
             unsubscribe()
             await self._session.destroy()
+
+    async def _run_with_phase_injection(self, initial_prompt: str, start_time: float) -> str:
+        """
+        Send the initial prompt and inject phase-transition messages if the agent
+        runs long.  Returns the last non-empty result text from the session.
+
+        Phase boundaries (fractions of AGENT_TOTAL_TIMEOUT_S):
+          soft warn  @ AGENT_SOFT_WARN_RATIO  (default 70%)
+          hard warn  @ AGENT_HARD_WARN_RATIO  (default 90%)
+          hard limit @ 100%
+
+        A liveness watchdog runs throughout all phases.
+        """
+        total = AGENT_TOTAL_TIMEOUT_S
+        soft_deadline = start_time + total * AGENT_SOFT_WARN_RATIO
+        hard_deadline = start_time + total * AGENT_HARD_WARN_RATIO
+        end_deadline = start_time + total
+
+        phases = [
+            # (deadline, inject_prompt_on_expiry)
+            (soft_deadline, _SOFT_WARN_PROMPT),
+            (hard_deadline, _HARD_WARN_PROMPT),
+            (end_deadline, None),  # final phase — raise on expiry
+        ]
+
+        result = ""
+        current_prompt = initial_prompt
+        phase_index = 0
+
+        for phase_deadline, next_prompt in phases:
+            remaining = phase_deadline - time.monotonic()
+            if remaining <= 0:
+                # Already past this deadline — skip to the next
+                phase_index += 1
+                continue
+
+            session_task = asyncio.create_task(
+                self._session.send_and_wait({"prompt": current_prompt}, timeout=total)
+            )
+            watchdog_task = asyncio.create_task(
+                self._phase_watchdog(phase_deadline, end_deadline)
+            )
+
+            done, pending = await asyncio.wait(
+                [session_task, watchdog_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+                try:
+                    await t
+                except asyncio.CancelledError:
+                    pass
+
+            if session_task in done:
+                # Session completed this phase — extract result and finish.
+                event = session_task.result()
+                if event and event.data.content:
+                    result = event.data.content
+                return result
+
+            # Watchdog fired — check why.
+            watchdog_result = watchdog_task.result()
+            elapsed = int(time.monotonic() - start_time)
+            idle = int(time.monotonic() - self._last_activity)
+
+            if watchdog_result == "liveness":
+                raise asyncio.TimeoutError(
+                    f"No activity for {idle}s (elapsed {elapsed}s) — agent appears stuck"
+                )
+            if watchdog_result == "total":
+                raise asyncio.TimeoutError(
+                    f"Exceeded hard timeout of {int(total)}s"
+                )
+
+            # Phase timeout — abort current processing and inject the next prompt.
+            self._log.warning(
+                "Agent phase timeout — injecting guardrail prompt",
+                phase=phase_index,
+                elapsed_s=elapsed,
+                watchdog=watchdog_result,
+            )
+            await self._publish({
+                "type": "agent.phase_timeout",
+                "agent": self.role.value,
+                "phase": phase_index,
+                "elapsed_s": elapsed,
+            })
+
+            # Cancel the in-flight session_task and abort CLI-side processing.
+            session_task.cancel()
+            try:
+                await session_task
+            except asyncio.CancelledError:
+                pass
+            await self._session.abort()
+
+            current_prompt = next_prompt  # type: ignore[assignment]
+            phase_index += 1
+
+        # Exhausted all phases without a completed result.
+        raise asyncio.TimeoutError(f"Exceeded hard timeout of {int(total)}s across all phases")
+
+    async def _phase_watchdog(self, phase_deadline: float, end_deadline: float) -> str:
+        """
+        Return a signal when a timeout condition fires:
+          'phase'    — phase deadline reached (inject next prompt)
+          'liveness' — no SDK activity for AGENT_LIVENESS_TIMEOUT_S
+          'total'    — hard end_deadline reached
+        """
+        while True:
+            await asyncio.sleep(WATCHDOG_POLL_S)
+            now = time.monotonic()
+            if now >= end_deadline:
+                return "total"
+            if now - self._last_activity > AGENT_LIVENESS_TIMEOUT_S:
+                return "liveness"
+            if now >= phase_deadline:
+                return "phase"
 
     def _handle_sdk_event(self, event: "SessionEvent") -> None:
         """Translate Copilot SDK events into Orchestra events and publish them."""

@@ -179,9 +179,9 @@ components:
           enum: [balanced, economy, performance, free, auto]
           default: balanced
           description: |
-            balanced: claude-sonnet-4-6 for all roles (hardcoded default)
-            economy: claude-haiku-4-5-20251001 for all roles
-            performance: claude-opus-4-6 for all roles
+            balanced: claude-sonnet-4.6 for all roles (hardcoded default)
+            economy: claude-haiku-4.5 for all roles
+            performance: claude-opus-4.6 for all roles
             free: dynamically discovered 0x models only (billing.multiplier == 0.0)
             auto: orchestrator selects per-reviewer model via suggested_models in ReviewPlan
         model_overrides:
@@ -193,10 +193,10 @@ components:
       properties:
         orchestrator:
           type: string
-          example: "claude-sonnet-4-6"
+          example: "claude-sonnet-4.6"
         reviewer_1:
           type: string
-          example: "claude-opus-4-6"
+          example: "claude-opus-4.6"
         reviewer_2:
           type: string
         reviewer_3:
@@ -233,7 +233,7 @@ components:
       properties:
         id:
           type: string
-          example: "claude-sonnet-4-6"
+          example: "claude-sonnet-4.6"
         name:
           type: string
           example: "Claude Sonnet 4.6"

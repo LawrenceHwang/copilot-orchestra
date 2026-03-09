@@ -22,6 +22,7 @@ import fnmatch
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,10 @@ MAX_GIT_DIFF_BYTES = 50_000
 MAX_DIRECTORY_DEPTH = 5
 MAX_DIRECTORY_FILES = 300  # total entries before truncation
 MAX_GREP_OUTPUT_BYTES = 20_000  # bytes before grep output is truncated
+
+# Agent guardrail thresholds
+_TOOL_CALL_NUDGE_AT = 15   # append a "do you have enough?" nudge after this many calls
+_FILE_READ_WARN_AT = 20    # append a soft warning after this many distinct files read
 
 # Common large/generated directories to skip in non-git fallback mode.
 _SKIP_DIRS: frozenset[str] = frozenset(
@@ -446,12 +451,20 @@ class GitDiffFileParams(BaseModel):
 # ── Tool builder ──────────────────────────────────────────────────────────────
 
 
-def build_codebase_tools(codebase_path: str) -> list[Tool]:
+def build_codebase_tools(codebase_path: str, start_time: float | None = None) -> list[Tool]:
     """
     Build codebase tools locked to the given root path.
 
     Returns a list of Tool objects ready to pass to SessionConfig.
-    Each call creates a new registry — tools from different reviews are isolated.
+    Each call creates a new registry and fresh tracking state — call once
+    per agent so that elapsed time and file-read counts are per-agent.
+
+    Optional start_time enables runtime guardrail annotations on every
+    tool result:
+      - Elapsed time footer (⏱ Elapsed: Xs) so the agent can self-regulate.
+      - Soft warning after _FILE_READ_WARN_AT distinct files have been read.
+      - Nudge after _TOOL_CALL_NUDGE_AT total tool calls asking whether the
+        agent has enough context to proceed.
 
     Tools provided (5 total):
       - read_file: read a single file (1 MB cap)
@@ -462,6 +475,39 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
     """
     registry = CodebaseToolRegistry(allowed_root=codebase_path)
 
+    # Per-agent mutable tracking state (created fresh per build_codebase_tools call).
+    _files_read: set[str] = set()
+    _call_count: list[int] = [0]  # list so inner functions can mutate it
+
+    def _annotate(result: str, file_path: str | None = None) -> str:
+        """Append guardrail annotations to a tool result."""
+        _call_count[0] += 1
+        if file_path:
+            _files_read.add(file_path)
+
+        notes: list[str] = []
+
+        if start_time is not None:
+            elapsed = int(time.monotonic() - start_time)
+            notes.append(f"⏱ Elapsed: {elapsed}s")
+
+        if file_path and len(_files_read) == _FILE_READ_WARN_AT:
+            notes.append(
+                f"⚠ You have now read {len(_files_read)} distinct files. "
+                "Consider whether you have enough context to proceed rather than reading more."
+            )
+
+        if _call_count[0] == _TOOL_CALL_NUDGE_AT:
+            notes.append(
+                f"ℹ You have made {_call_count[0]} tool calls. "
+                "Do you have enough information to write your review / submit your plan? "
+                "If yes, do so now."
+            )
+
+        if not notes:
+            return result
+        return result + "\n\n---\n" + " | ".join(notes)
+
     @define_tool(
         description=(
             "Read the text contents of a file in the codebase. "
@@ -469,7 +515,8 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
         )
     )
     def read_file(params: ReadFileParams) -> str:
-        return registry.read_file(params.path)
+        result = registry.read_file(params.path)
+        return _annotate(result, file_path=params.path)
 
     @define_tool(
         description=(
@@ -480,7 +527,8 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
         )
     )
     def list_directory(params: ListDirectoryParams) -> str:
-        return registry.list_directory(params.path, params.max_depth)
+        result = registry.list_directory(params.path, params.max_depth)
+        return _annotate(result)
 
     @define_tool(
         description=(
@@ -491,7 +539,8 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
         )
     )
     def grep_codebase(params: GrepCodebaseParams) -> str:
-        return registry.grep_codebase(params.pattern, params.glob, params.max_results)
+        result = registry.grep_codebase(params.pattern, params.glob, params.max_results)
+        return _annotate(result)
 
     @define_tool(
         description=(
@@ -501,7 +550,8 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
         )
     )
     def git_diff(params: GitDiffParams) -> str:
-        return registry.git_diff(params.path, params.base)
+        result = registry.git_diff(params.path, params.base)
+        return _annotate(result)
 
     @define_tool(
         description=(
@@ -510,7 +560,8 @@ def build_codebase_tools(codebase_path: str) -> list[Tool]:
         )
     )
     def git_diff_file(params: GitDiffFileParams) -> str:
-        return registry.git_diff_file(params.path, params.file, params.base)
+        result = registry.git_diff_file(params.path, params.file, params.base)
+        return _annotate(result)
 
     return [read_file, list_directory, grep_codebase, git_diff, git_diff_file]
 

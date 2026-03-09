@@ -195,6 +195,8 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics,
           </pre>
         )}
 
+        {state.plan && <ReviewPlanView plan={state.plan} />}
+
         {state.status === "error" && state.error && (
           <p className="text-red-500 text-xs mt-2">⚠ {state.error}</p>
         )}
@@ -217,9 +219,19 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics,
   // Compact summary bar — shown when the agent is done and compactWhenDone is set.
   // Keeps the orchestrator from dominating the layout after its planning phase ends.
   if (compactWhenDone && state.status === "done") {
-    const firstLine = state.streamText?.split("\n").find((l) => l.trim()) ?? "";
+    const planSummary = state.plan
+      ? (() => {
+          const fileCount = state.plan.reviewer_1.files.length;
+          const focus = state.plan.reviewer_1.focus;
+          return `${fileCount} file${fileCount !== 1 ? "s" : ""} · ${focus}`;
+        })()
+      : (state.streamText?.split("\n").find((l) => l.trim()) ?? "");
     return (
-      <div className={`flex items-center justify-between rounded-lg border-t-2 px-3 py-2 gap-3 ${colors.color} ${d("bg-gray-900", "bg-white border border-slate-200 shadow-sm")}`}>
+      <div
+        className={`flex items-center justify-between rounded-lg border-t-2 px-3 py-2 gap-3 cursor-pointer ${colors.color} ${d("bg-gray-900 hover:bg-gray-800/60", "bg-white hover:bg-slate-50 border border-slate-200 shadow-sm")}`}
+        onClick={() => onExpand?.()}
+        title="Click to expand plan"
+      >
         <div className="flex items-center gap-2 min-w-0">
           <span className={`text-xs px-2 py-0.5 rounded font-semibold shrink-0 ${colors.badge}`}>
             {label}
@@ -237,9 +249,9 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics,
               · +{waitSecs}s wait
             </span>
           )}
-          {firstLine && (
-            <span className={`text-[10px] truncate ${d("text-gray-400", "text-slate-500")}`}>
-              · {firstLine.slice(0, 120)}
+          {planSummary && (
+            <span className={`text-[10px] truncate ${state.plan ? d("text-indigo-400", "text-indigo-600") : d("text-gray-400", "text-slate-500")}`}>
+              · {planSummary.slice(0, 120)}
             </span>
           )}
         </div>
@@ -333,6 +345,71 @@ function fmtTokens(n) {
 function fmtWindow(n) {
   if (n >= 1000) return `${Math.round(n / 1000)}k`;
   return String(n);
+}
+
+const REVIEWER_COLORS = {
+  reviewer_1: {
+    dark: "text-red-400 border-red-800 bg-red-950/30",
+    light: "text-red-700 border-red-200 bg-red-50",
+  },
+  reviewer_2: {
+    dark: "text-amber-400 border-amber-800 bg-amber-950/30",
+    light: "text-amber-700 border-amber-200 bg-amber-50",
+  },
+  reviewer_3: {
+    dark: "text-emerald-400 border-emerald-800 bg-emerald-950/30",
+    light: "text-emerald-700 border-emerald-200 bg-emerald-50",
+  },
+};
+
+function ReviewPlanView({ plan }) {
+  const { theme, d } = useThemeClasses();
+  const reviewers = ["reviewer_1", "reviewer_2", "reviewer_3"];
+
+  return (
+    <div className={`mt-3 rounded border ${d("border-gray-700/60 bg-gray-800/40", "border-slate-200 bg-slate-50")}`}>
+      <div className={`flex items-center gap-1.5 px-3 py-1.5 border-b text-[10px] font-semibold uppercase tracking-wide ${d("border-gray-700/60 text-gray-500", "border-slate-200 text-slate-400")}`}>
+        <span>📋</span>
+        <span>Review Plan</span>
+      </div>
+      <div className="divide-y divide-gray-700/40 dark:divide-gray-700/40">
+        {reviewers.map((r) => {
+          const rPlan = plan[r];
+          if (!rPlan) return null;
+          const colors = REVIEWER_COLORS[r]?.[theme] ?? REVIEWER_COLORS[r]?.dark;
+          return (
+            <div key={r} className="px-3 py-2 flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${colors}`}>
+                  {r}
+                </span>
+                <span className={`text-[10px] font-mono ${d("text-gray-400", "text-slate-500")}`}>
+                  {rPlan.files.length} file{rPlan.files.length !== 1 ? "s" : ""}
+                </span>
+                <span className={`text-[10px] truncate ${d("text-gray-300", "text-slate-700")}`} title={rPlan.focus}>
+                  {rPlan.focus}
+                </span>
+              </div>
+              {rPlan.files.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {rPlan.files.map((f, i) => (
+                    <span key={i} className={`text-[9px] font-mono px-1 py-0.5 rounded ${d("bg-gray-700/60 text-gray-400", "bg-slate-200 text-slate-600")}`}>
+                      {f.split("/").slice(-2).join("/")}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {plan.rationale && (
+        <div className={`px-3 py-2 border-t text-[10px] italic ${d("border-gray-700/60 text-gray-500", "border-slate-200 text-slate-400")}`}>
+          {plan.rationale}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function CopyButton({ text }) {

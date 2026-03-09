@@ -29,6 +29,7 @@ function makeAgentState() {
     model: null,
     toolCalls: [],
     error: null,
+    plan: null,           // orchestrator only — ReviewPlan once submitted
   };
 }
 
@@ -209,6 +210,12 @@ function reducer(state, action) {
       };
     }
 
+    case "ORCHESTRATOR_PLAN":
+      return {
+        ...state,
+        orchestrator: { ...state.orchestrator, plan: action.plan },
+      };
+
     case "REVIEW_COMPLETE":
       return {
         ...state,
@@ -381,6 +388,9 @@ function AppInner() {
           context_window_tokens:
             event.context_window_tokens ?? resolveContextWindowTokens(event.model, models),
         });
+        break;
+      case "orchestrator.plan":
+        dispatch({ type: "ORCHESTRATOR_PLAN", plan: event.plan });
         break;
       case "review.complete":
         dispatch({ type: "REVIEW_COMPLETE", timestamp: ts });

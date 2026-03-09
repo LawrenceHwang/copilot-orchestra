@@ -156,6 +156,24 @@ An agent encountered an error. The pipeline continues with remaining agents.
 }
 ```
 
+### `agent.phase_timeout`
+
+A reviewer agent crossed a phase boundary (70% or 90% of its time budget). The current
+in-flight session turn was aborted and a guardrail prompt was injected as a new turn to
+redirect the agent toward writing its review. `phase` is 0-indexed (0 = soft warning at 70%,
+1 = hard trigger at 90%). See ADR 004.
+
+```json
+{
+  "type": "agent.phase_timeout",
+  "review_id": "abc123",
+  "ts": 1700000025000,
+  "agent": "reviewer_3",
+  "phase": 0,
+  "elapsed_s": 421
+}
+```
+
 ### `model.selected`
 
 The orchestrator selected a model for a reviewer (auto mode only). Emitted after the

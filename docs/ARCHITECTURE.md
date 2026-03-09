@@ -2,7 +2,7 @@
 
 ## System Overview
 
-```
+```text
 Browser (React) / Machine Callers (curl, Python, CI)
     │  REST + SSE
     ▼
@@ -40,7 +40,7 @@ github-copilot-sdk  (JSON-RPC over stdio to Copilot CLI)
 
 Single source of truth for model selection. Priority chain:
 
-```
+```text
 User Override  >  Orchestrator Choice  >  Config Preset  >  Hardcoded Default
 ```
 
@@ -53,6 +53,12 @@ User Override  >  Orchestrator Choice  >  Config Preset  >  Hardcoded Default
   `router.set_orchestrator_choice(role, model)` for each suggestion. These choices are
   lower priority than user overrides.
 - Stateless per review — a new `ModelRouter` instance is created per `ReviewRequest`.
+
+**Model ID format:** The Copilot SDK uses dot notation for version numbers in model IDs
+(e.g. `claude-sonnet-4.6`, `claude-haiku-4.5`, `claude-opus-4.6`). Hardcoded fallback
+constants in `model_router.py` and default values in `config.py` must use this format.
+Always verify against `GET /api/models` when the SDK is updated — model IDs can change
+between SDK releases.
 
 ### ReviewStore
 
@@ -137,11 +143,27 @@ This matches how the SDK is designed (one CLI process, many sessions).
 BYOK support: if `BYOK_PROVIDER_TYPE` + `BYOK_API_KEY` are set, a `ProviderConfig` is
 injected into every `create_session` call.
 
+**Enterprise SDK compatibility (`sdk_compat.py`):** Enterprise GitHub Copilot accounts
+may omit capability and billing fields that the SDK treats as required, causing
+`list_models()` to fail for the entire catalog. `apply_enterprise_sdk_patches()` is called
+once at startup (in `lifespan`, before the client starts) and monkey-patches the SDK's
+`from_dict` methods to fill in safe conservative defaults for any absent fields:
+
+| Field | Default | Rationale |
+| ----- | ------- | --------- |
+| `ModelSupports.vision` | `False` | Conservative — assume no vision |
+| `ModelCapabilities.supports` / `.limits` | empty objects | Allow partial capability payloads |
+| `ModelPolicy.state` / `.terms` | `"unconfigured"` / `""` | Enterprise manages terms via master agreement |
+| `ModelBilling.multiplier` | `1.0` | Prevents enterprise models from being mistaken as free (0×) |
+
+These patches are narrowly scoped (only fill when `None`, never override present values),
+idempotent, and should be removed once the SDK handles optional fields natively.
+
 ### Orchestrator
 
 The top-level review pipeline:
 
-```
+```text
 1. publish review.started
 2. build codebase tools (path-safe, root = request.codebase_path)
 3. run orchestrator agent → ReviewPlan (via submit_plan tool call)
@@ -209,19 +231,30 @@ All five agents publish identical event sets: `agent.started` (with `model`),
 
 #### Timeout / Watchdog
 
-`BaseAgent` uses a **hybrid timeout** strategy:
+`BaseAgent` uses a **multi-phase timeout** strategy (see ADR 004):
 
 | Constant | Value | Purpose |
-|----------|-------|---------|
+| -------- | ----- | ------- |
 | `AGENT_TOTAL_TIMEOUT_S` | 600 s | Hard ceiling for reviewer agents |
+| `AGENT_SOFT_WARN_RATIO` | 0.70 | At 70% elapsed (420 s): inject soft warning |
+| `AGENT_HARD_WARN_RATIO` | 0.90 | At 90% elapsed (540 s): inject hard write trigger |
 | `AGENT_LIVENESS_TIMEOUT_S` | 90 s | Cancel if no SDK event for this long |
+| `WATCHDOG_POLL_S` | 10 s | How often the watchdog checks |
 | `SYNTH_TOTAL_TIMEOUT_S` | 300 s | Hard ceiling for synthesizer |
 | `SYNTH_LIVENESS_TIMEOUT_S` | 60 s | Synthesizer liveness |
-| `WATCHDOG_POLL_S` | 10 s | How often the watchdog checks |
 
-Any incoming SDK event (token, tool call, even `agent.thinking` from a reasoning model)
-resets the liveness clock. A `TimeoutError` is caught and published as `agent.error`;
-the pipeline continues with the remaining reviewers.
+Phase transitions are managed by `_run_with_phase_injection` in `BaseAgent`:
+
+1. **Phase 1 (0–420 s)** — normal execution with liveness watchdog.
+2. **Phase 2 (420–540 s)** — `session.abort()` called; soft warning injected as a new turn:
+   "start writing with what you have."
+3. **Phase 3 (540–600 s)** — `session.abort()` called; hard write trigger injected:
+   "stop tool calls and write immediately."
+
+A liveness watchdog (`_phase_watchdog`) runs throughout all phases. It returns `"phase"`,
+`"liveness"`, or `"total"` signals. Phase transitions are published as `agent.phase_timeout`
+events. A `TimeoutError` (liveness or hard ceiling) is caught and published as `agent.error`;
+the pipeline continues with remaining reviewers.
 
 **Critical:** Every `send_and_wait` call **must** pass an explicit `timeout` parameter:
 
@@ -234,6 +267,10 @@ is far too short for the synthesizer (which processes three full reviews) and fo
 reviewer agents. The `SynthesizerAgent` overrides `run()` and must pass `timeout=SYNTH_TOTAL_TIMEOUT_S`
 explicitly — it does not inherit the base class call. Always verify this whenever `run()` is
 overridden in a subclass.
+
+**Note on `session.abort()`:** Calling `abort()` stops in-flight CLI-side processing. The
+session remains valid for new `send_and_wait` calls, preserving full conversation history.
+This is the mechanism behind phase injection.
 
 ### Codebase Tools
 
@@ -249,6 +286,21 @@ synthesizer gets none — it is a single-turn call):
 | `git_diff_file` | `path: str='.'`, `file: str`, `base: str` | single-file diff; defaults `path` to review root; `file` may be absolute or root-relative and is path-validated |
 
 Allowed roots are set per-review to `[request.codebase_path]`. No other paths accessible.
+
+**Per-agent tool instances:** `build_codebase_tools(codebase_path, start_time)` is called
+once per agent (orchestrator + each reviewer independently). This gives each agent its own
+isolated tracking state for guardrail annotations. A shared tool list across agents is wrong —
+do not pass the same list to multiple sessions.
+
+**Guardrail annotations** appended to every tool result (when `start_time` is supplied):
+
+- `⏱ Elapsed: Xs` — wall-clock time since the agent started; lets the model self-regulate.
+- Soft warning after 20 distinct files read via `read_file`.
+- Nudge to proceed after 15 total tool calls.
+
+**`submit_plan` schema:** Pydantic v2's `model_json_schema()` emits `$defs` + `$ref` for
+nested models. LLM APIs do not resolve `$ref`. Use `_inline_schema_refs()` (see ADR 005)
+when deriving `Tool(parameters=...)` from any Pydantic model with nested sub-models.
 
 #### Large-repo strategy
 
@@ -285,7 +337,7 @@ independent review exists so the synthesizer can triangulate findings.
 
 ### Starting a Review
 
-```
+```text
 POST /api/reviews
   body: { task, codebase_path, scope, model_preset, model_overrides }
   → validates codebase_path exists and is a directory
@@ -309,7 +361,7 @@ Option B — Browser / TUI streaming:
 
 ### SSE Event Flow
 
-```
+```text
 Agent session fires event
   → on() handler in agent code
   → translates to OrchestraEvent dict
@@ -326,7 +378,7 @@ See [EVENT_SCHEMA.md](EVENT_SCHEMA.md) for the full event schema.
 Key events:
 
 | Type | When | Key Fields |
-|------|------|------------|
+| ---- | ---- | ---------- |
 | `review.started` | Review begins | `review_id`, `request` |
 | `agent.started` | Agent session begins | `agent`, `model` |
 | `agent.stream` | Streaming text chunk | `agent`, `content` |
@@ -336,6 +388,7 @@ Key events:
 | `agent.tool_result` | Tool completed | `agent`, `tool_name`, `tool_call_id`, `success` |
 | `agent.done` | Agent finished | `agent`, `duration_ms` |
 | `agent.error` | Agent failed | `agent`, `error` |
+| `agent.phase_timeout` | Phase boundary crossed; guardrail prompt injected | `agent`, `phase`, `elapsed_s` |
 | `model.selected` | Auto mode selection | `agent`, `model`, `reason` |
 | `metrics.update` | Token/usage update | `agent`, `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `turns`, `quota` |
 | `review.complete` | All done | `synthesis`, `duration_ms` |
@@ -490,7 +543,7 @@ always read the initial empty string. Use refs for cross-event coordination inst
 See [adr/](adr/) for individual Architecture Decision Records.
 
 | Concern | Choice | Reason |
-|---------|--------|--------|
+| ------- | ------ | ------ |
 | Transport | SSE (not WebSocket) | Read-only server push; simpler, FastAPI native |
 | Async | asyncio | SDK is async-first |
 | Config | pydantic-settings | Type-safe, .env support, secret masking |

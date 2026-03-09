@@ -306,11 +306,11 @@ without relaxing path-safety constraints.
   "custom_paths": ["src/backend/api", "src/backend/orchestration/orchestrator.py", "src/frontend/src/components/TaskInput.jsx"],
   "model_preset": "performance",
   "model_overrides": {
-    "orchestrator": "claude-sonnet-4-6",
-    "reviewer_1": "claude-opus-4-6",
-    "reviewer_2": "claude-opus-4-6",
-    "reviewer_3": "claude-sonnet-4-6",
-    "synthesizer": "claude-sonnet-4-6"
+    "orchestrator": "claude-sonnet-4.6",
+    "reviewer_1": "claude-opus-4.6",
+    "reviewer_2": "claude-opus-4.6",
+    "reviewer_3": "claude-sonnet-4.6",
+    "synthesizer": "claude-sonnet-4.6"
   }
 }
 ```
@@ -328,10 +328,10 @@ without relaxing path-safety constraints.
 
 | Preset | Orchestrator | Reviewers | Synthesizer | Use when |
 |--------|-------------|-----------|-------------|----------|
-| `balanced` | claude-sonnet-4-6 | claude-sonnet-4-6 | claude-sonnet-4-6 | Default; good quality + cost |
-| `economy` | claude-haiku-4-5 | claude-haiku-4-5 | claude-haiku-4-5 | Fast feedback, lower quota usage |
-| `performance` | claude-opus-4-6 | claude-opus-4-6 | claude-opus-4-6 | Deepest analysis, highest cost |
-| `auto` | claude-sonnet-4-6 | orchestrator decides per reviewer | orchestrator decides | Let the orchestrator pick per file complexity |
+| `balanced` | claude-sonnet-4.6 | claude-sonnet-4.6 | claude-sonnet-4.6 | Default; good quality + cost |
+| `economy` | claude-haiku-4.5 | claude-haiku-4.5 | claude-haiku-4.5 | Fast feedback, lower quota usage |
+| `performance` | claude-opus-4.6 | claude-opus-4.6 | claude-opus-4.6 | Deepest analysis, highest cost |
+| `auto` | claude-sonnet-4.6 | orchestrator decides per reviewer | orchestrator decides | Let the orchestrator pick per file complexity |
 
 #### Model Overrides (highest priority)
 
@@ -340,8 +340,8 @@ Override any individual role, regardless of preset:
 ```json
 {
   "model_overrides": {
-    "reviewer_1": "claude-opus-4-6",
-    "synthesizer": "claude-sonnet-4-6"
+    "reviewer_1": "claude-opus-4.6",
+    "synthesizer": "claude-sonnet-4.6"
   }
 }
 ```
@@ -557,16 +557,29 @@ curl http://localhost:8000/api/models
 {
   "models": [
     {
-      "id": "claude-opus-4-6",
-      "name": "Claude Opus 4.6",
+      "id": "claude-sonnet-4.6",
+      "name": "Claude Sonnet 4.6",
       "capabilities": { ... },
-      "policy": { ... }
+      "policy": { ... },
+      "billing_multiplier": 1.0
+    },
+    {
+      "id": "claude-haiku-4.5",
+      "name": "Claude Haiku 4.5",
+      "capabilities": { ... },
+      "policy": { ... },
+      "billing_multiplier": 1.0
     },
     ...
   ],
   "byok_active": false
 }
 ```
+
+> **Model ID format:** Copilot SDK model IDs use dot notation for version numbers
+> (e.g. `claude-sonnet-4.6`, `claude-haiku-4.5`, `claude-opus-4.6`). Use the `id`
+> values returned by this endpoint directly in `model_overrides` — do not guess or
+> hardcode IDs, as they can change between SDK releases.
 
 Use model `id` values directly in `model_overrides`.
 
