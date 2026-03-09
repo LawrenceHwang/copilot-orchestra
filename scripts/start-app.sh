@@ -24,6 +24,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 cd "$REPO_ROOT"
+unset VIRTUAL_ENV
 export PYTHONPATH="$REPO_ROOT/src"
 
 echo "Starting backend on http://127.0.0.1:8000 ..."

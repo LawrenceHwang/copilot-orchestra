@@ -99,38 +99,36 @@ export function ModelRouterPanel({ config, onChange, models, disabled, reviewerN
       })()}
 
       {/* Per-role overrides */}
-      {models.length > 0 && (
-        <div className="space-y-2">
-          <p className={`text-[10px] uppercase tracking-wider ${d("text-gray-600", "text-slate-400")}`}>
-            Per-role overrides (take highest priority)
-          </p>
-          {roles.map((role) => (
-            <div key={role} className="flex items-center gap-2 overflow-hidden">
-              <span className={`text-[10px] w-20 shrink-0 ${d("text-gray-500", "text-slate-500")}`}>
-                {roleLabels[role] ?? role}
-              </span>
-              <select
-                value={config.overrides?.[role] || ""}
-                onChange={(e) => handleOverride(role, e.target.value)}
-                disabled={disabled}
-                className={`flex-1 min-w-0 text-xs rounded px-2 py-1
-                  focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${d(
-                  "bg-gray-800 border border-gray-700 text-gray-300 focus:border-indigo-500",
-                  "bg-white border border-slate-200 text-slate-700 focus:border-indigo-400 shadow-sm"
-                )
-                  }`}
-              >
-                <option value="">— preset default —</option>
-                {models.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.id}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="space-y-2">
+        <p className={`text-[10px] uppercase tracking-wider ${d("text-gray-600", "text-slate-400")}`}>
+          Per-role overrides (take highest priority)
+        </p>
+        {roles.map((role) => (
+          <div key={role} className="flex items-center gap-2 overflow-hidden">
+            <span className={`text-[10px] w-20 shrink-0 ${d("text-gray-500", "text-slate-500")}`}>
+              {roleLabels[role] ?? role}
+            </span>
+            <select
+              value={config.overrides?.[role] || ""}
+              onChange={(e) => handleOverride(role, e.target.value)}
+              disabled={disabled || models.length === 0}
+              className={`flex-1 min-w-0 text-xs rounded px-2 py-1
+                focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed ${d(
+                "bg-gray-800 border border-gray-700 text-gray-300 focus:border-indigo-500",
+                "bg-white border border-slate-200 text-slate-700 focus:border-indigo-400 shadow-sm"
+              )
+                }`}
+            >
+              <option value="">{models.length === 0 ? "— backend offline —" : "— preset default —"}</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name || m.id}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+      </div>
 
       {config.preset === "auto" && (
         <p className={`text-[10px] italic ${d("text-amber-600/80", "text-amber-600")}`}>
