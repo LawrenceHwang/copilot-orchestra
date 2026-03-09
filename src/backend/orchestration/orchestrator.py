@@ -125,6 +125,32 @@ class ReviewPlan(BaseModel):
     )
 
 
+def _inline_schema_refs(schema: dict) -> dict:
+    """
+    Resolve all $ref pointers in a JSON schema by inlining their $defs.
+
+    Pydantic v2 generates schemas with $defs + $ref for nested models.
+    Many LLM tool-calling APIs do not support $ref and require fully inlined
+    schemas, so we resolve them before passing to Tool(parameters=...).
+    """
+    import copy
+
+    schema = copy.deepcopy(schema)
+    defs = schema.pop("$defs", {})
+
+    def _resolve(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            if "$ref" in obj:
+                ref_name = obj["$ref"].split("/")[-1]
+                return _resolve(defs[ref_name])
+            return {k: _resolve(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_resolve(item) for item in obj]
+        return obj
+
+    return _resolve(schema)
+
+
 # ── Review request ────────────────────────────────────────────────────────────
 
 
@@ -322,7 +348,7 @@ async def _run_orchestrator(
     submit_plan_tool = Tool(
         name="submit_plan",
         description="Submit the review plan assigning files and focus to each of the three reviewers. Call this when ready.",
-        parameters=ReviewPlan.model_json_schema(),
+        parameters=_inline_schema_refs(ReviewPlan.model_json_schema()),
         handler=submit_plan_handler,
     )
 
