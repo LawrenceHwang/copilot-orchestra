@@ -20,6 +20,7 @@ from backend.logging_config import configure_logging, get_logger
 from backend.orchestration.event_bus import EventBus
 from backend.orchestration.review_store import ReviewStore
 from backend.orchestration.session_manager import SessionManager
+from backend.sdk_compat import apply_enterprise_sdk_patches
 
 logger = get_logger("main")
 
@@ -30,6 +31,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     settings: Settings = app.state.settings
 
     configure_logging(log_level=settings.log_level, debug=settings.debug)
+    apply_enterprise_sdk_patches()
     logger.info("Copilot Orchestra starting", **settings.safe_repr())
 
     session_manager = SessionManager(settings)

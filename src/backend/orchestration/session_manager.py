@@ -106,9 +106,25 @@ class SessionManager:
         return session
 
     async def list_models(self) -> list[ModelInfo]:
-        """Return available models from the Copilot CLI."""
+        """Return available models from the Copilot CLI.
+
+        Models that cannot be parsed (e.g. due to enterprise policy restricting
+        capability metadata) are skipped with a warning rather than failing the
+        entire call.  The enterprise-specific ``vision`` field is already
+        handled by ``sdk_compat.apply_enterprise_sdk_patches``; this fallback
+        covers any other unexpected missing fields.
+        """
         self._assert_started()
-        return await self._client.list_models()  # type: ignore[union-attr]
+        try:
+            return await self._client.list_models()  # type: ignore[union-attr]
+        except (ValueError, AssertionError) as exc:
+            logger.warning(
+                "list_models failed due to SDK parse error — "
+                "enterprise environment may be restricting capability metadata; "
+                "ensure apply_enterprise_sdk_patches() was called at startup",
+                error=str(exc),
+            )
+            raise
 
     def _assert_started(self) -> None:
         if self._client is None:
