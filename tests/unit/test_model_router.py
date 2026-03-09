@@ -15,19 +15,19 @@ from backend.orchestration.model_router import AgentRole, ModelPreset, ModelRout
 class TestModelRouterDefaults:
     def test_returns_default_orchestrator_model(self):
         router = ModelRouter()
-        assert router.get_model(AgentRole.ORCHESTRATOR) == "claude-sonnet-4-6"
+        assert router.get_model(AgentRole.ORCHESTRATOR) == "claude-sonnet-4.6"
 
     def test_returns_default_reviewer_1_model(self):
         router = ModelRouter()
-        assert router.get_model(AgentRole.REVIEWER_1) == "claude-sonnet-4-6"
+        assert router.get_model(AgentRole.REVIEWER_1) == "claude-sonnet-4.6"
 
     def test_returns_default_reviewer_2_model(self):
         router = ModelRouter()
-        assert router.get_model(AgentRole.REVIEWER_2) == "claude-sonnet-4-6"
+        assert router.get_model(AgentRole.REVIEWER_2) == "claude-sonnet-4.6"
 
     def test_returns_default_reviewer_3_model(self):
         router = ModelRouter()
-        assert router.get_model(AgentRole.REVIEWER_3) == "claude-sonnet-4-6"
+        assert router.get_model(AgentRole.REVIEWER_3) == "claude-sonnet-4.6"
 
     def test_balanced_preset_matches_defaults(self):
         router_default = ModelRouter()

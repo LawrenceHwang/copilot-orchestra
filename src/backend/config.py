@@ -40,11 +40,11 @@ class Settings(BaseSettings):
     byok_base_url: str | None = None
 
     # ── Default Models ─────────────────────────────────────────────────────
-    default_orchestrator_model: str = "claude-sonnet-4-6"
-    default_security_model: str = "claude-opus-4-6"
-    default_performance_model: str = "claude-sonnet-4-6"
-    default_readability_model: str = "claude-haiku-4-5-20251001"
-    default_synthesizer_model: str = "claude-sonnet-4-6"
+    default_orchestrator_model: str = "claude-sonnet-4.6"
+    default_security_model: str = "claude-opus-4.6"
+    default_performance_model: str = "claude-sonnet-4.6"
+    default_readability_model: str = "claude-haiku-4.5"
+    default_synthesizer_model: str = "claude-sonnet-4.6"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

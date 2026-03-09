@@ -18,15 +18,15 @@ logger = get_logger("model_router")
 
 # Hardcoded fallback models (last resort in priority chain)
 _HARDCODED_DEFAULTS: dict[str, str] = {
-    "orchestrator": "claude-sonnet-4-6",
-    "reviewer_1": "claude-sonnet-4-6",
-    "reviewer_2": "claude-sonnet-4-6",
-    "reviewer_3": "claude-sonnet-4-6",
-    "synthesizer": "claude-sonnet-4-6",
+    "orchestrator": "claude-sonnet-4.6",
+    "reviewer_1": "claude-sonnet-4.6",
+    "reviewer_2": "claude-sonnet-4.6",
+    "reviewer_3": "claude-sonnet-4.6",
+    "synthesizer": "claude-sonnet-4.6",
 }
 
-_ECONOMY_MODEL = "claude-haiku-4-5-20251001"
-_PERFORMANCE_MODEL = "claude-opus-4-6"
+_ECONOMY_MODEL = "claude-haiku-4.5"
+_PERFORMANCE_MODEL = "claude-opus-4.6"
 
 
 class AgentRole(str, Enum):
