@@ -32,8 +32,8 @@ logger = get_logger("agent.base")
 AGENT_TOTAL_TIMEOUT_S: float = 600.0  # 10-min hard ceiling
 AGENT_LIVENESS_TIMEOUT_S: float = 90.0  # 90 s idle → stuck
 WATCHDOG_POLL_S: float = 10.0
-AGENT_SOFT_WARN_RATIO: float = 0.70   # 70% elapsed → inject soft warning
-AGENT_HARD_WARN_RATIO: float = 0.90   # 90% elapsed → inject hard write trigger
+AGENT_SOFT_WARN_RATIO: float = 0.70  # 70% elapsed → inject soft warning
+AGENT_HARD_WARN_RATIO: float = 0.90  # 90% elapsed → inject hard write trigger
 
 _SOFT_WARN_PROMPT = (
     "You have used 70% of your time budget. "
@@ -123,7 +123,7 @@ class BaseAgent:
 
         finally:
             unsubscribe()
-            await self._session.destroy()
+            await self._session.disconnect()
 
     async def _run_with_phase_injection(self, initial_prompt: str, start_time: float) -> str:
         """
@@ -161,11 +161,9 @@ class BaseAgent:
                 continue
 
             session_task = asyncio.create_task(
-                self._session.send_and_wait({"prompt": current_prompt}, timeout=total)
+                self._session.send_and_wait(current_prompt, timeout=total)
             )
-            watchdog_task = asyncio.create_task(
-                self._phase_watchdog(phase_deadline, end_deadline)
-            )
+            watchdog_task = asyncio.create_task(self._phase_watchdog(phase_deadline, end_deadline))
 
             done, pending = await asyncio.wait(
                 [session_task, watchdog_task],
@@ -195,9 +193,7 @@ class BaseAgent:
                     f"No activity for {idle}s (elapsed {elapsed}s) — agent appears stuck"
                 )
             if watchdog_result == "total":
-                raise asyncio.TimeoutError(
-                    f"Exceeded hard timeout of {int(total)}s"
-                )
+                raise asyncio.TimeoutError(f"Exceeded hard timeout of {int(total)}s")
 
             # Phase timeout — abort current processing and inject the next prompt.
             self._log.warning(
@@ -206,12 +202,14 @@ class BaseAgent:
                 elapsed_s=elapsed,
                 watchdog=watchdog_result,
             )
-            await self._publish({
-                "type": "agent.phase_timeout",
-                "agent": self.role.value,
-                "phase": phase_index,
-                "elapsed_s": elapsed,
-            })
+            await self._publish(
+                {
+                    "type": "agent.phase_timeout",
+                    "agent": self.role.value,
+                    "phase": phase_index,
+                    "elapsed_s": elapsed,
+                }
+            )
 
             # Cancel the in-flight session_task and abort CLI-side processing.
             session_task.cancel()

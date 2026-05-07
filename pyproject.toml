@@ -5,25 +5,25 @@ description = "Multi-agent AI code review platform built on the GitHub Copilot S
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.32.0",
-    "github-copilot-sdk>=0.1.25",
-    "pydantic>=2.10.0",
-    "pydantic-settings>=2.6.0",
-    "python-dotenv>=1.0.0",
-    "structlog>=24.4.0",
-    "aiofiles>=24.1.0",
-    "python-dateutil>=2.9.0",
+    "fastapi>=0.136.1",
+    "uvicorn[standard]>=0.46.0",
+    "github-copilot-sdk>=0.3.0",
+    "pydantic>=2.13.4",
+    "pydantic-settings>=2.14.0",
+    "python-dotenv>=1.2.2",
+    "structlog>=25.5.0",
+    "aiofiles>=25.1.0",
+    "python-dateutil>=2.9.0.post0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.3.0",
-    "pytest-asyncio>=0.24.0",
-    "pytest-mock>=3.14.0",
-    "httpx>=0.27.0",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.8.0",
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.3.0",
+    "pytest-mock>=3.15.1",
+    "httpx>=0.28.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
 ]
 
 [tool.uv]
@@ -46,9 +46,9 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "S", "B"]
 ignore = [
-    "S101",  # assert in tests
-    "S603",  # subprocess without shell — we validate paths separately
-    "B008",  # FastAPI Depends() in function signature
+    "S101", # assert in tests
+    "S603", # subprocess without shell — we validate paths separately
+    "B008", # FastAPI Depends() in function signature
 ]
 
 [tool.ruff.lint.per-file-ignores]

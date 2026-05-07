@@ -37,6 +37,7 @@ def mock_copilot_session() -> MagicMock:
     session.session_id = "test-session-id"
     session.send_and_wait = AsyncMock(return_value=None)
     session.send = AsyncMock(return_value="msg-id")
+    session.disconnect = AsyncMock()
     session.destroy = AsyncMock()
     session.on = MagicMock(return_value=lambda: None)
     return session

@@ -86,7 +86,7 @@ export function SynthesisPanel({ state, timer, metrics, isExpanded, onExpand, on
     <div ref={panelRef} className={`flex flex-col rounded-lg border-t-2 border-violet-400 overflow-hidden min-h-[350px] ${d("bg-gray-900", "bg-white border border-slate-100")
       } ${isExpanded ? "max-h-[80vh]" : ""}`}>
       {/* Header */}
-      <div className={`flex-shrink-0 flex items-center justify-between px-4 py-2 border-b ${d("border-gray-800", "border-slate-100")
+      <div className={`shrink-0 flex items-center justify-between px-4 py-2 border-b ${d("border-gray-800", "border-slate-100")
         }`}>
         <div className="flex items-center gap-2">
           <span className={`text-xs px-2 py-0.5 rounded font-semibold ${d("bg-violet-900/40 text-violet-300", "bg-violet-50 text-violet-700")

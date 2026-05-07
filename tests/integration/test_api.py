@@ -16,10 +16,11 @@ from httpx import AsyncClient
 
 from backend.main import create_app
 from backend.orchestration.event_bus import EventBus
+from backend.orchestration.review_store import ReviewStore
 
 
 @pytest.fixture
-def mock_session_manager():
+def mock_session_manager(mock_copilot_session):
     manager = MagicMock()
     manager.list_models = AsyncMock(
         return_value=[
@@ -27,15 +28,17 @@ def mock_session_manager():
                 id="claude-sonnet-4-6",
                 name="Claude Sonnet 4.6",
                 capabilities=MagicMock(
-                    to_dict=lambda: {"supports": {"vision": True, "reasoningEffort": False},
-                                    "limits": {"maxPromptTokens": 200000}}
+                    to_dict=lambda: {
+                        "supports": {"vision": True, "reasoningEffort": False},
+                        "limits": {"maxPromptTokens": 200000},
+                    }
                 ),
                 policy=None,
                 billing=None,
             )
         ]
     )
-    manager.create_session = AsyncMock()
+    manager.create_session = AsyncMock(return_value=mock_copilot_session)
     return manager
 
 
@@ -44,6 +47,7 @@ def app(mock_session_manager):
     application = create_app()
     application.state.session_manager = mock_session_manager
     application.state.event_bus = EventBus()
+    application.state.review_store = ReviewStore()
     return application
 
 

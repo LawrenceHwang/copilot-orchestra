@@ -10,13 +10,9 @@ from __future__ import annotations
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from copilot import CopilotClient, CopilotSession, PermissionHandler
-from copilot.types import (
-    CopilotClientOptions,
-    ModelInfo,
-    ProviderConfig,
-    SessionConfig,
-)
+from copilot import CopilotClient, CopilotSession, SubprocessConfig
+from copilot.client import ModelInfo
+from copilot.session import PermissionHandler, ProviderConfig
 
 from backend.config import Settings
 from backend.logging_config import get_logger
@@ -46,8 +42,8 @@ class SessionManager:
 
     async def start(self) -> None:
         """Start the Copilot CLI process. Call once at application startup."""
-        opts = self._build_client_options()
-        self._client = CopilotClient(opts)
+        config = self._build_client_config()
+        self._client = CopilotClient(config)
         await self._client.start()
         logger.info(
             "CopilotClient started",
@@ -80,7 +76,7 @@ class SessionManager:
 
     async def create_session(
         self,
-        session_config: SessionConfig,
+        session_config: dict[str, Any],
         byok_override: ProviderConfig | None = None,
     ) -> CopilotSession:
         """
@@ -97,7 +93,7 @@ class SessionManager:
             logger.debug("BYOK provider injected into session config")
 
         session_config = {**session_config, "on_permission_request": PermissionHandler.approve_all}
-        session = await self._client.create_session(session_config)  # type: ignore[union-attr]
+        session = await self._client.create_session(**session_config)  # type: ignore[arg-type,union-attr]
         logger.info(
             "Session created",
             session_id=session.session_id,
@@ -132,20 +128,20 @@ class SessionManager:
                 "SessionManager is not started. Call start() or use as async context manager."
             )
 
-    def _build_client_options(self) -> CopilotClientOptions:
-        opts: CopilotClientOptions = {}
+    def _build_client_config(self) -> SubprocessConfig:
+        config: dict[str, Any] = {}
 
         if self._settings.github_token:
-            opts["github_token"] = self._settings.github_token
-            opts["use_logged_in_user"] = False
+            config["github_token"] = self._settings.github_token
+            config["use_logged_in_user"] = False
             logger.debug("Using explicit GitHub token for auth")
         else:
-            opts["use_logged_in_user"] = self._settings.use_logged_in_user
+            config["use_logged_in_user"] = self._settings.use_logged_in_user
 
         if self._settings.copilot_cli_path:
-            opts["cli_path"] = self._settings.copilot_cli_path
+            config["cli_path"] = self._settings.copilot_cli_path
 
-        return opts
+        return SubprocessConfig(**config)
 
     def _build_byok_provider(self) -> ProviderConfig | None:
         """Build a ProviderConfig from settings if BYOK is active."""
