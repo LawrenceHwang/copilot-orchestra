@@ -1,9 +1,11 @@
 # ADR 004: Copilot SDK Tool API — ToolInvocation and ToolResult are dataclasses
 
 ## Status
+
 Accepted
 
 ## Context
+
 The orchestrator registers a custom `submit_plan` tool using the Copilot SDK's `Tool` dataclass.
 The tool handler receives a `ToolInvocation` and must return a `ToolResult`.
 
@@ -15,6 +17,7 @@ failure. The orchestrator retried repeatedly, gave up, and the fallback plan (em
 was used instead.
 
 ## Decision
+
 Access `ToolInvocation` fields as dataclass attributes and construct `ToolResult` as a dataclass:
 
 ```python
@@ -27,7 +30,7 @@ plan = ReviewPlan.model_validate(invocation.arguments)
 return ToolResult(text_result_for_llm="ok", result_type="success")
 ```
 
-## SDK types (from `copilot.types`):
+## SDK types (from `copilot.tools`)
 
 ```python
 @dataclass
@@ -50,6 +53,7 @@ class ToolResult:
 `ToolHandler = Callable[[ToolInvocation], ToolResult | Awaitable[ToolResult]]`
 
 ## Rationale
+
 - The SDK exposes clean Python dataclasses, not JSON dicts. Fields use snake_case.
 - `invocation.arguments` is already a parsed object (dict/list/scalar) — no `json.loads()`
   needed before passing to Pydantic's `model_validate()`.
@@ -58,6 +62,7 @@ class ToolResult:
   returning a failure result so the root cause is visible.
 
 ## Consequences
+
 - All custom tool handlers in this project must use dataclass access, not dict access.
 - `ToolResult` must be instantiated, not returned as a plain dict.
 - Pydantic's `model_validate()` can receive `invocation.arguments` directly when the SDK

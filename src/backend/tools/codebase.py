@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from copilot import define_tool
-from copilot.types import Tool
+from copilot.tools import Tool
 from pydantic import BaseModel, Field
 
 from backend.logging_config import get_logger
@@ -41,8 +41,8 @@ MAX_DIRECTORY_FILES = 300  # total entries before truncation
 MAX_GREP_OUTPUT_BYTES = 20_000  # bytes before grep output is truncated
 
 # Agent guardrail thresholds
-_TOOL_CALL_NUDGE_AT = 15   # append a "do you have enough?" nudge after this many calls
-_FILE_READ_WARN_AT = 20    # append a soft warning after this many distinct files read
+_TOOL_CALL_NUDGE_AT = 15  # append a "do you have enough?" nudge after this many calls
+_FILE_READ_WARN_AT = 20  # append a soft warning after this many distinct files read
 
 # Common large/generated directories to skip in non-git fallback mode.
 _SKIP_DIRS: frozenset[str] = frozenset(

@@ -102,8 +102,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design.
 ## Prerequisites
 
 - Python 3.13+ with [uv](https://docs.astral.sh/uv/)
-- Node.js 20+ with npm
-- GitHub Copilot CLI installed and authenticated via `copilot auth status`
+- Node.js 20.19+ or 22.12+ with npm
+- GitHub Copilot authentication available. The Python SDK uses its bundled CLI by default,
+  or a custom CLI path if you set `COPILOT_CLI_PATH`.
 - or a BYOK API key, described below
 
 ## Quick Start

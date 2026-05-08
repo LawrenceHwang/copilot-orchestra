@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from copilot.types import ToolInvocation, ToolResult
+from copilot.tools import ToolInvocation, ToolResult
 
 from backend.tools.codebase import (
     MAX_DIRECTORY_FILES,

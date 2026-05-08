@@ -443,7 +443,7 @@ function AppInner() {
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${d("bg-gray-950", "bg-slate-50")}`}>
       {/* Top bar */}
-      <header className={`flex items-center justify-between px-4 py-2 border-b ${d("bg-gray-900 border-gray-800", "bg-white border-slate-200 shadow-sm")}`}>
+      <header className={`flex items-center justify-between px-4 py-2 border-b ${d("bg-gray-900 border-gray-800", "bg-white border-slate-200 shadow-xs")}`}>
         <div className="flex items-center gap-3">
           <span className={`text-sm font-bold tracking-tight ${d("text-gray-100", "text-gray-900")}`}>
             Copilot Orchestra
@@ -592,7 +592,7 @@ function AppInner() {
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left sidebar — controls */}
         <aside
-          className={`flex-shrink-0 border-b md:border-b-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 max-h-[45vh] md:max-h-none w-full ${d("bg-gray-950 border-gray-800", "bg-slate-50 border-slate-200")
+          className={`shrink-0 border-b md:border-b-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 max-h-[45vh] md:max-h-none w-full ${d("bg-gray-950 border-gray-800", "bg-slate-50 border-slate-200")
             }`}
           style={isDesktop ? { width: sidebarWidth } : {}}
         >
@@ -620,7 +620,7 @@ function AppInner() {
 
         {/* Resize handle — desktop only */}
         <div
-          className={`hidden md:flex w-1 flex-shrink-0 cursor-col-resize transition-colors ${d("bg-gray-800 hover:bg-indigo-600", "bg-slate-200 hover:bg-indigo-400")
+          className={`hidden md:flex w-1 shrink-0 cursor-col-resize transition-colors ${d("bg-gray-800 hover:bg-indigo-600", "bg-slate-200 hover:bg-indigo-400")
             }`}
           onMouseDown={onResizeStart}
         />

@@ -8,7 +8,7 @@ from backend.orchestration.model_router import AgentRole
 
 # Synthesizer is a single-turn call with no tools, so it should respond
 # faster than reviewers.  Keep tighter liveness and total bounds.
-SYNTH_TOTAL_TIMEOUT_S: float = 300.0   # 5-min hard ceiling
+SYNTH_TOTAL_TIMEOUT_S: float = 300.0  # 5-min hard ceiling
 SYNTH_LIVENESS_TIMEOUT_S: float = 60.0  # 60 s idle → stuck
 
 SYSTEM_PROMPT = """You are a staff engineer with decision authority making the final call on a code review.
@@ -106,9 +106,7 @@ class SynthesizerAgent(BaseAgent):
             prompt = self._build_prompt(files, focus)
 
             async def _run_session() -> Any:
-                return await self._session.send_and_wait(
-                    {"prompt": prompt}, timeout=SYNTH_TOTAL_TIMEOUT_S
-                )
+                return await self._session.send_and_wait(prompt, timeout=SYNTH_TOTAL_TIMEOUT_S)
 
             async def _watchdog() -> str:
                 deadline = start_time + SYNTH_TOTAL_TIMEOUT_S
@@ -154,11 +152,13 @@ class SynthesizerAgent(BaseAgent):
             duration_ms = int((time.monotonic() - start_time) * 1000)
             self._log.info("Synthesizer done", duration_ms=duration_ms)
 
-            await self._publish({
-                "type": "agent.done",
-                "agent": self.role.value,
-                "duration_ms": duration_ms,
-            })
+            await self._publish(
+                {
+                    "type": "agent.done",
+                    "agent": self.role.value,
+                    "duration_ms": duration_ms,
+                }
+            )
             return result
 
         except asyncio.TimeoutError as exc:
@@ -175,4 +175,4 @@ class SynthesizerAgent(BaseAgent):
 
         finally:
             unsubscribe()
-            await self._session.destroy()
+            await self._session.disconnect()

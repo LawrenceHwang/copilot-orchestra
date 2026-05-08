@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from copilot.types import SessionConfig
+from copilot.tools import Tool, ToolInvocation, ToolResult
 from pydantic import BaseModel, Field
 
 from backend.logging_config import get_logger
@@ -318,7 +318,6 @@ async def _run_orchestrator(
 ) -> ReviewPlan:
     """Run the orchestrator session and return a ReviewPlan."""
     from copilot.generated.session_events import SessionEventType
-    from copilot.types import Tool, ToolInvocation, ToolResult
 
     captured_plan: list[ReviewPlan] = []
     start_time = time.monotonic()
@@ -348,9 +347,18 @@ async def _run_orchestrator(
                     "type": "orchestrator.plan",
                     "review_id": review_id,
                     "plan": {
-                        "reviewer_1": {"files": plan.reviewer_1.files, "focus": plan.reviewer_1.focus},
-                        "reviewer_2": {"files": plan.reviewer_2.files, "focus": plan.reviewer_2.focus},
-                        "reviewer_3": {"files": plan.reviewer_3.files, "focus": plan.reviewer_3.focus},
+                        "reviewer_1": {
+                            "files": plan.reviewer_1.files,
+                            "focus": plan.reviewer_1.focus,
+                        },
+                        "reviewer_2": {
+                            "files": plan.reviewer_2.files,
+                            "focus": plan.reviewer_2.focus,
+                        },
+                        "reviewer_3": {
+                            "files": plan.reviewer_3.files,
+                            "focus": plan.reviewer_3.focus,
+                        },
                         "rationale": plan.rationale,
                     },
                 },
@@ -369,7 +377,7 @@ async def _run_orchestrator(
     is_auto = model_router._preset == ModelPreset.AUTO
     system_prompt = ORCHESTRATOR_SYSTEM_PROMPT + (AUTO_MODEL_INSTRUCTIONS if is_auto else "")
 
-    session_config: SessionConfig = {
+    session_config: dict[str, Any] = {
         "model": model,
         "tools": [*tools, submit_plan_tool],
         "system_message": {"mode": "replace", "content": system_prompt},
@@ -482,7 +490,7 @@ async def _run_orchestrator(
         )
 
         try:
-            await session.send_and_wait({"prompt": prompt}, timeout=600.0)
+            await session.send_and_wait(prompt, timeout=600.0)
         except Exception as exc:
             # If the orchestrator already submitted a plan before timing out, use it.
             if captured_plan:
@@ -507,7 +515,7 @@ async def _run_orchestrator(
 
     finally:
         unsubscribe()
-        await session.destroy()
+        await session.disconnect()
 
     if captured_plan:
         return captured_plan[0]
@@ -532,7 +540,7 @@ async def _run_reviewer(
     # Fresh tool instances per reviewer: isolated start_time and file-read tracking.
     tools = build_codebase_tools(codebase_path, start_time=time.monotonic())
 
-    session_config: SessionConfig = {
+    session_config: dict[str, Any] = {
         "model": model,
         "tools": tools,
         "system_message": {"mode": "replace", "content": REVIEWER_PROMPTS[role]},
@@ -559,7 +567,7 @@ async def _run_synthesizer(
 ) -> str:
     model = model_router.get_model(AgentRole.SYNTHESIZER)
 
-    session_config: SessionConfig = {
+    session_config: dict[str, Any] = {
         "model": model,
         "system_message": {"mode": "replace", "content": SYNTH_PROMPT},
         "streaming": True,

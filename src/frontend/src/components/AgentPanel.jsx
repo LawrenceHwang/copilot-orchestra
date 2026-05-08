@@ -99,7 +99,7 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics,
   }, [isExpanded, onCollapse]);
 
   const panel = (
-    <div ref={panelRef} className={`flex flex-col rounded-lg border-t-2 overflow-hidden ${colors.color} ${d("bg-gray-900", "bg-white border border-slate-200 shadow-sm")
+    <div ref={panelRef} className={`flex flex-col rounded-lg border-t-2 overflow-hidden ${colors.color} ${d("bg-gray-900", "bg-white border border-slate-200 shadow-xs")
       } ${isExpanded ? "max-h-[80vh]" : "min-h-[140px]"} ${className ?? ""}`}>
 
       {/* Header row 1 — identity + status */}
@@ -221,14 +221,14 @@ export function AgentPanel({ role, name, state, timer, reviewStartedAt, metrics,
   if (compactWhenDone && state.status === "done") {
     const planSummary = state.plan
       ? (() => {
-          const fileCount = state.plan.reviewer_1.files.length;
-          const focus = state.plan.reviewer_1.focus;
-          return `${fileCount} file${fileCount !== 1 ? "s" : ""} · ${focus}`;
-        })()
+        const fileCount = state.plan.reviewer_1.files.length;
+        const focus = state.plan.reviewer_1.focus;
+        return `${fileCount} file${fileCount !== 1 ? "s" : ""} · ${focus}`;
+      })()
       : (state.streamText?.split("\n").find((l) => l.trim()) ?? "");
     return (
       <div
-        className={`flex items-center justify-between rounded-lg border-t-2 px-3 py-2 gap-3 cursor-pointer ${colors.color} ${d("bg-gray-900 hover:bg-gray-800/60", "bg-white hover:bg-slate-50 border border-slate-200 shadow-sm")}`}
+        className={`flex items-center justify-between rounded-lg border-t-2 px-3 py-2 gap-3 cursor-pointer ${colors.color} ${d("bg-gray-900 hover:bg-gray-800/60", "bg-white hover:bg-slate-50 border border-slate-200 shadow-xs")}`}
         onClick={() => onExpand?.()}
         title="Click to expand plan"
       >
